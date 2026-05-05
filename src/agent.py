@@ -1,3 +1,5 @@
+import numpy as np
+
 from .state import State
 from .constants import AgentAction
 
@@ -20,23 +22,40 @@ class Agent:
 
         self.illegal_moves = 0
 
-    def scan(self, state: State) -> None:
+    def scan(self, state: State) -> list[dict]:
         """
         Retrieves information from the state passed in (with some noise/uncertainties?)
 
         Parameters:
         state: The true world to scan from
         """
-        for i in range(self.world_height):
-            for j in range(self.world_width):
+        self.perception.confidence.matrix = np.maximum(self.perception.confidence.matrix - self.sigma, 0) # vectorized confidence decay
+
+        min_x = max(0, self.x - self.scan_radius)
+        max_x = min(self.world_width, self.x + self.scan_radius + 1)
+        min_y = max(0, self.y - self.scan_radius)
+        max_y = min(self.world_height, self.y + self.scan_radius + 1)
+
+        scanned_tiles = []
+
+        for i in range(min_y, max_y):
+            for j in range(min_x, max_x):
                 if self._tile_scanned(i, j):
                     self.perception.confidence[i][j] = max(self.perception.confidence[i][j] - self.sigma, self.scan_accuracy)
                     self.perception.traversability[i][j] = state.traversability[i][j]
                     self.perception.victims[i][j] = state.victims[i][j]
                     self.perception.agents[i][j] = state.agents[i][j]
-                else:
-                    self.perception.confidence[i][j] = max(self.perception.confidence[i][j] - self.sigma, 0)
-                    
+                    scanned_tiles.append({
+                        "x": j,
+                        "y": i,
+                        "traversability": state.traversability[i][j],
+                        "victims": state.victims[i][j],
+                        "agents": state.agents[i][j],
+                        "confidence": self.perception.confidence[i][j]
+                    })
+        
+        return scanned_tiles
+
 
     def move(self, direction: AgentAction) -> None:
         """

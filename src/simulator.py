@@ -11,6 +11,7 @@ from .agent import *
 from .fire_manager import FireManager
 from .constants import *
 from .metric import Metric
+from .supervisor import Supervisor
 
 class Simulator:
     def __init__(self, width: int, height: int):
@@ -18,9 +19,16 @@ class Simulator:
         self.height = height
         self.agents: list[Agent] = []
         self.ground_truth = State(width, height)
-        self.fire_manager: FireManager = FireManager(width, height, 0.0, 0.0) #? Start with a non-spreading fire manager, wondering if it is the right way
+        self.fire_manager: FireManager = None
         self.metrics = Metric()
+        self.supervisor: Supervisor = None
 
+    def add_supervisor(self, supervisor: Supervisor) -> None:
+        self.supervisor = supervisor
+    
+    def add_fire_manager(self, fire_manager: FireManager) -> None:
+        self.fire_manager = fire_manager
+    
     def add_agent(self, agent: Agent) -> None:
         """
         Adds an agent to the simulation and updates the ground truth
@@ -46,11 +54,16 @@ class Simulator:
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
 
+        # Agents scan and update the shared supervisor belief state
+        agent_scans = []
         for agent in self.agents:
-            agent.scan(self.ground_truth)
+            agent_scans.append(agent.scan(self.ground_truth))
+        if self.supervisor is not None:
+            self.supervisor.update_belief(agent_scans)
 
         # Perform environment actions (firespread, etc.)
-        self.fire_manager.spread_fire(self.ground_truth)
+        if self.fire_manager is not None:
+            self.fire_manager.spread_fire(self.ground_truth)
         self.metrics.steps_taken += 1
         self._update_found_metrics()
 
@@ -235,10 +248,12 @@ class Simulator:
     def generate_ground_truth(self, config: MapConfig | None = None, seed: float | None = None) -> None:
         if config is None:
             config = MapConfig()
+        
         if seed is None:
-            seed = random.random() * 1_000_000_000
+            seed = (int) (random.random() * 1_000_000_000)
         print(f"Using seed {seed} to generate the map.")
         random.seed(seed)
+
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
                                                                                         config.num_rooms, config.unconnected_probability, 
@@ -252,7 +267,7 @@ class Simulator:
         self.ground_truth.agents.matrix = _place_agents(self.width, self.height, config.num_agents, rooms, self.ground_truth.victims)
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
 
-        self.fire_manager = FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration)
+        self.add_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration))
         self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
 
         self.ground_truth.confidence.matrix = np.ones((self.height, self.width))

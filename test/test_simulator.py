@@ -21,7 +21,7 @@ class SimulatorTest(unittest.TestCase):
                            min_tunnel_thickness=4,
                            max_tunnel_thickness=6,
                            num_victims=5)
-        simulator.generate_ground_truth(config, seed=391048954.9508311)
+        simulator.generate_ground_truth(config)
         state_after_running = simulator.run(10)[0][-1]
         # visualize_grid_gen(simulator.ground_truth.traversability, simulator.ground_truth.agents, 
         #                    simulator.ground_truth.victims, simulator.ground_truth.vulnerability,
