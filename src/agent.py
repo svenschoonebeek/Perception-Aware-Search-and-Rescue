@@ -1,7 +1,7 @@
 import numpy as np
 
 from .state import State
-from .constants import AgentAction
+from .constants import *
 
 class Agent:
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
@@ -22,7 +22,7 @@ class Agent:
 
         self.illegal_moves = 0
 
-    def scan(self, state: State) -> list[dict]:
+    def scan(self, state: State) -> list[Tile]:
         """
         Retrieves information from the state passed in (with some noise/uncertainties?)
 
@@ -43,16 +43,17 @@ class Agent:
                 if self._tile_scanned(i, j):
                     self.perception.confidence[i][j] = max(self.perception.confidence[i][j] - self.sigma, self.scan_accuracy)
                     self.perception.traversability[i][j] = state.traversability[i][j]
+                    self.perception.vulnerability[i][j] = state.vulnerability[i][j]
+                    self.perception.fire[i][j] = state.fire[i][j]
                     self.perception.victims[i][j] = state.victims[i][j]
                     self.perception.agents[i][j] = state.agents[i][j]
-                    scanned_tiles.append({
-                        "x": j,
-                        "y": i,
-                        "traversability": state.traversability[i][j],
-                        "victims": state.victims[i][j],
-                        "agents": state.agents[i][j],
-                        "confidence": self.perception.confidence[i][j]
-                    })
+                    scanned_tiles.append(Tile(j, i, 
+                                              state.traversability[i][j],
+                                              state.vulnerability[i][j],
+                                              state.fire[i][j],
+                                              state.victims[i][j],
+                                              state.agents[i][j],
+                                              self.perception.confidence[i][j]))
         
         return scanned_tiles
 

@@ -58,6 +58,7 @@ class Simulator:
         agent_scans = []
         for agent in self.agents:
             agent_scans.append(agent.scan(self.ground_truth))
+        
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
 

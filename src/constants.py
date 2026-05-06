@@ -47,14 +47,14 @@ class RescueCommand(BaseCommand): #TODO current variables are just placeholders,
     target_tolerance: int = 0
 
 @dataclass
-class DiscoverCommand(BaseCommand): #TODO same as above
+class ExploreCommand(BaseCommand): #TODO same as above
     coverage_radius: int = 3
     avoid_fire_weight: float = 5.0
 
 class TaskType(Enum):
     RESCUE = "rescue"
-    DISCOVER = "discover"
-
+    EXPLORE = "explore"
+    
 @dataclass
 class Task:
     task_id: int
@@ -76,14 +76,25 @@ class Task:
                 urgency_weight=urgency
             )
             
-        elif self.task_type == TaskType.DISCOVER:
-            return DiscoverCommand(
+        elif self.task_type == TaskType.EXPLORE:
+            return ExploreCommand(
                 target_x=self.x, 
                 target_y=self.y
             )
             
         else:
             raise ValueError(f"Unsupported TaskType: {self.task_type}")
+
+@dataclass
+class Tile:
+    x: int
+    y: int
+    traversability: TraversabilityLevel
+    vulnerability: VulnerabilityLevel
+    fire: FireLevel
+    victims: VictimPresence
+    agents: AgentPresence
+    confidence: float
 
 @dataclass
 class AgentTelemetry:
