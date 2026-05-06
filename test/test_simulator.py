@@ -1,4 +1,5 @@
 import unittest
+import itertools
 
 from src.simulator import *
 
@@ -94,3 +95,20 @@ class SimulatorTest(unittest.TestCase):
         self.assertEqual(steps[1][2].agents[0, 2], 1)
         self.assertEqual(steps[1][3].agents[0, 2], 0)
         self.assertEqual(steps[1][3].agents[0, 3], 1)
+
+    def test_seed_consistency(self):
+        sim1 = Simulator(30, 30)
+        sim2 = Simulator(30, 30)
+
+        config = MapConfig()
+        seed = 1234567890
+
+        sim1.generate_ground_truth(config, seed)
+        sim2.generate_ground_truth(config, seed)
+
+        for i, j in itertools.product(range(30), range(30)):
+            self.assertEqual(sim1.ground_truth.traversability.matrix[i][j], sim2.ground_truth.traversability.matrix[i][j])
+            self.assertEqual(sim1.ground_truth.vulnerability.matrix[i][j], sim2.ground_truth.vulnerability.matrix[i][j])
+            self.assertEqual(sim1.ground_truth.agents.matrix[i][j], sim2.ground_truth.agents.matrix[i][j])
+            self.assertEqual(sim1.ground_truth.victims.matrix[i][j], sim2.ground_truth.victims.matrix[i][j])
+

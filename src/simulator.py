@@ -246,7 +246,7 @@ class Simulator:
             self.metrics.time_to_all_found = self.metrics.steps_taken
             self.metrics.outcome = RunOutcome.SUCCESS
     
-    def generate_ground_truth(self, config: MapConfig | None = None, seed: float | None = None) -> None:
+    def generate_ground_truth(self, config: MapConfig | None = None, seed: int | None = None) -> None:
         if config is None:
             config = MapConfig()
         
