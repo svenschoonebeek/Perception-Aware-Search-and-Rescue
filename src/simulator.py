@@ -7,7 +7,7 @@ import matplotlib.colors as mcolors
 
 from .grid import Grid
 from .state import State
-from .agent import *
+from .agent import Agent
 from .fire_manager import FireManager
 from .constants import *
 from .metric import Metric
@@ -50,9 +50,13 @@ class Simulator:
         list[0]: the ground truth state after the step
         list[1:]: the states of the agents after the step
         """
+        if not self.metrics.history:
+            self.metrics.record_snapshot()  # capture initial metric state
+
         intents = self._collect_intents()
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
+        self._apply_vulnerability_damage()
 
         # Agents scan and update the shared supervisor belief state
         agent_scans = []
@@ -66,7 +70,9 @@ class Simulator:
         if self.fire_manager is not None:
             self.fire_manager.spread_fire(self.ground_truth)
         self.metrics.steps_taken += 1
-        self._update_found_metrics()
+        self._update_victim_metrics()
+        self._update_area_explored()
+        self.metrics.record_snapshot()
 
         res = [deepcopy(self.ground_truth)]
         for agent in self.agents:
@@ -95,6 +101,7 @@ class Simulator:
 
         for _ in range(steps):
             # Record steps
+            print("Step", _, "=========================")
             step_result = self.step()
             for i in range(len(step_result)):
                 record[i].append(step_result[i])
@@ -103,6 +110,9 @@ class Simulator:
                 break
         if self.metrics.outcome == RunOutcome.IN_PROGRESS:
             self.metrics.outcome = RunOutcome.TIMEOUT
+            if self.metrics.history:
+                # make final snapshot reflect the timeout outcome
+                self.metrics.history[-1] = self.metrics.snapshot()
         return record
 
     def _collect_intents(self) -> dict[Agent, tuple[int, int]]:
@@ -224,7 +234,7 @@ class Simulator:
             self.ground_truth.agents[ty][tx] = 1
             agent.move_to(tx, ty)
 
-    def _update_found_metrics(self) -> None:
+    def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.
         """
@@ -245,8 +255,40 @@ class Simulator:
         if found == total and self.metrics.time_to_all_found is None:
             self.metrics.time_to_all_found = self.metrics.steps_taken
             self.metrics.outcome = RunOutcome.SUCCESS
-    
+
+    def _update_area_explored(self) -> None:
+        """
+        Update each agent's fraction of traversable cells they have ever scanned.
+        """
+        traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSIBLE)
+        total = int(traversable.sum())
+        self.metrics.total_traversable = total
+        if total == 0:
+            for agent in self.agents:
+                self.metrics.area_explored[agent] = 0.0
+            return
+
+        for agent in self.agents:
+            explored = int(agent.explored[traversable].sum())
+            self.metrics.area_explored[agent] = explored / total
+
+    def _apply_vulnerability_damage(self) -> None:
+        """
+        Damage on each agent based on the vulnerability of the cell they currently occupy.
+        """
+        for agent in self.agents:
+            vulnerability = float(self.ground_truth.vulnerability[agent.y][agent.x])
+            self.metrics.record_vulnerable_collision(agent, vulnerability)
+
     def generate_ground_truth(self, config: MapConfig | None = None, seed: int | None = None) -> None:
+        """
+        Generates the ground truth state of the world, including the traversability, vulnerability, 
+        agent positions, and victim positions.
+        Parameters:
+        config: The configuration for the map generation, including parameters like number of rooms, room sizes, vulnerability probabilities, etc. If None, default parameters will be used.
+        seed: The seed for the random number generator to ensure reproducibility. If None, a random seed will be generated and printed. 
+
+        """
         if config is None:
             config = MapConfig()
         

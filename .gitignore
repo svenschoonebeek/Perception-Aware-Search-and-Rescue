@@ -1,6 +1,4 @@
 __pycache__
-.python-version
-pyproject.toml
 pytest.ini
 .venv/
 .DS_Store

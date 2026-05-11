@@ -1,0 +1,12 @@
+[project]
+name = "rp-2026-autonomous-search-and-rescue"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.4",
+    "pygame>=2.6.0",
+    "tcod>=21.2.0",
+]

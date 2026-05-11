@@ -1,11 +1,35 @@
 import numpy as np
 
 from .state import State
-from .constants import *
+from .constants import AgentAction
+import numpy as np
+
+from dataclasses import dataclass
+
+import numpy as np
+from numpy.typing import NDArray
+
+from tcod.map import compute_fov
+from tcod.libtcodpy import FOV_RESTRICTIVE
+
+# Threshold for what value of traversability causes a tile to become 'opaque' to the LoS check
+LOS_THRESHOLD = 1
+
+@dataclass
+class Scan:
+    xs: NDArray
+    ys: NDArray
+    traversability: NDArray
+    vulnerability: NDArray
+    victims: NDArray
+    agents: NDArray
+    fire: NDArray
+    confidence: NDArray
+
 
 class Agent:
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
-                 sigma: float, scan_accuracy: float, scan_radius: int):
+                 decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool):
         self.name = name
         self.perception = State(width, height)
         self.x = x
@@ -14,80 +38,40 @@ class Agent:
         self.world_width = width
         self.world_height = height
 
-        self.sigma = sigma # Certainty decay per time step [0,1]
+        self.decay = decay # Certainty decay per time step [0,1]
         self.scan_accuracy = scan_accuracy # Scan accuracy [0,1]
         self.scan_radius = scan_radius # How far the agent can see when it scans
+        self.scan_falloff = scan_falloff # Whether scan accuracy should decrease with distance
 
         self.move_history: list[tuple[int, int]] = [(x, y)] # Maintain a log of what positions the agent has been in for stats
 
         self.illegal_moves = 0
 
-    def scan(self, state: State) -> list[Tile]:
+        self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has ever scanned
+
+    def scan(self, state: State) -> Scan:
         """
         Retrieves information from the state passed in (with some noise/uncertainties?)
 
         Parameters:
         state: The true world to scan from
         """
-        self.perception.confidence.matrix = np.maximum(self.perception.confidence.matrix - self.sigma, 0) # vectorized confidence decay
+        visible = self._tiles_in_radius() & self._tiles_in_los(state)
+        confidence_bounds = np.where(visible, self._tile_accuracy(), 0)
 
-        min_x = max(0, self.x - self.scan_radius)
-        max_x = min(self.world_width, self.x + self.scan_radius + 1)
-        min_y = max(0, self.y - self.scan_radius)
-        max_y = min(self.world_height, self.y + self.scan_radius + 1)
+        self.perception.traversability[visible] = trvs = state.traversability[visible]
+        self.perception.vulnerability[visible] = vuln = state.vulnerability[visible]
+        self.perception.victims[visible] = vict = state.victims[visible]
+        self.perception.agents[visible] = agnt = state.agents[visible]
+        self.perception.fire[visible] = fire = state.fire[visible]
+        self.perception.confidence.matrix = np.maximum(self.perception.confidence.matrix - self.decay, confidence_bounds)
 
-        scanned_tiles = []
+        self.explored[visible] = True
 
-        for i in range(min_y, max_y):
-            for j in range(min_x, max_x):
-                if self._tile_scanned(i, j):
-                    self.perception.confidence[i][j] = max(self.perception.confidence[i][j] - self.sigma, self.scan_accuracy)
-                    self.perception.traversability[i][j] = state.traversability[i][j]
-                    self.perception.vulnerability[i][j] = state.vulnerability[i][j]
-                    self.perception.fire[i][j] = state.fire[i][j]
-                    self.perception.victims[i][j] = state.victims[i][j]
-                    self.perception.agents[i][j] = state.agents[i][j]
-                    scanned_tiles.append(Tile(j, i, 
-                                              state.traversability[i][j],
-                                              state.vulnerability[i][j],
-                                              state.fire[i][j],
-                                              state.victims[i][j],
-                                              state.agents[i][j],
-                                              self.perception.confidence[i][j]))
-        
-        return scanned_tiles
+        ys, xs = np.nonzero(visible)
+        conf = self.perception.confidence.matrix[visible]
 
-
-    def move(self, direction: AgentAction) -> None:
-        """
-        Updates an agent's internal position based on an action
-
-        Parameters:
-        direction: The action to perform
-        """
-
-        target_x, target_y = self.x, self.y
-
-        match direction:
-            case AgentAction.MOVE_UP:
-                target_y -= 1
-            case AgentAction.MOVE_DOWN:
-                target_y += 1
-            case AgentAction.MOVE_LEFT:
-                target_x -= 1
-            case AgentAction.MOVE_RIGHT:
-                target_x += 1
-            case _:
-                return
-
-        if not (0 <= target_x < self.world_width and 0 <= target_y < self.world_height):
-            self.illegal_moves += 1
-            return
-
-        self.perception.agents[self.y][self.x] = 0
-        self.x, self.y = target_x, target_y
-        self.move_history.append((self.x, self.y))
-        self.perception.agents[self.y][self.x] = 1
+        return Scan(xs, ys, trvs, vuln, vict, agnt, fire, conf)
 
     def move_to(self, x: int, y: int) -> None:
         """
@@ -107,9 +91,27 @@ class Agent:
         """
         return AgentAction.MOVE_RIGHT
 
-    def _tile_scanned(self, row: int, col: int) -> bool:
+    def _tiles_in_radius(self) -> NDArray[np.bool]:
         """
-        Checks if a tile is within the scan radius of the agent
+        Returns a mask of all tiles within scan_radius of the agent
         """
-        # return abs(row - self.y) + abs(col - self.x) <= self.scan_radius # manhattan distance
-        return abs(row - self.y) ** 2 + abs(col - self.x) ** 2 <= self.scan_radius ** 2 # euclidean distance
+        y, x = np.ogrid[:self.world_height, :self.world_width]
+        return (y - self.y)**2 + (x - self.x)**2 <= self.scan_radius**2 # euclidean distance
+    
+    def _tiles_in_los(self, state: State) -> NDArray[np.bool]:
+        """
+        Basically just TCOD's Restrictive Precise Angle Shadowcasting FOV calculation
+
+        Returns a mask of tiles which are within line of sight from the agent. Note that TCOD's definition
+        of radius is different to our own, so we need to combine it with a radius mask later. 
+        """
+        transparency = np.where(state.traversability.matrix >= LOS_THRESHOLD, 0, 1)
+        return compute_fov(transparency, (self.y, self.x), self.scan_radius, True, FOV_RESTRICTIVE)
+    
+    def _tile_accuracy(self) -> NDArray[np.float64]:
+        if self.scan_falloff:
+            var = (self. scan_radius / 3) ** 2
+            y, x = np.ogrid[:self.world_height, :self.world_width]
+            return self.scan_accuracy * np.exp(-0.5 * ((x - self.x)**2 + (y - self.y)**2) / var)
+        else:
+            return np.full((self.world_height, self.world_width), self.scan_accuracy)
