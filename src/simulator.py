@@ -23,10 +23,10 @@ class Simulator:
         self.metrics = Metric()
         self.supervisor: Supervisor = None
 
-    def add_supervisor(self, supervisor: Supervisor) -> None:
+    def set_supervisor(self, supervisor: Supervisor) -> None:
         self.supervisor = supervisor
     
-    def add_fire_manager(self, fire_manager: FireManager) -> None:
+    def set_fire_manager(self, fire_manager: FireManager) -> None:
         self.fire_manager = fire_manager
     
     def add_agent(self, agent: Agent) -> None:
@@ -48,7 +48,8 @@ class Simulator:
         Returns:
         A list with elements:
         list[0]: the ground truth state after the step
-        list[1:]: the states of the agents after the step
+        list[1:#agents + 1]: the states of the agents after the step
+        list[#agents + 1]: the supervisor state after the step if supervisor is present
         """
         if not self.metrics.history:
             self.metrics.record_snapshot()  # capture initial metric state
@@ -59,16 +60,22 @@ class Simulator:
         self._apply_vulnerability_damage()
 
         # Agents scan and update the shared supervisor belief state
-        agent_scans = []
+        agent_scans: list[Scan] = []
         for agent in self.agents:
             agent_scans.append(agent.scan(self.ground_truth))
         
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
+            self.supervisor.check_for_spatial_conflicts()
+            self.supervisor.check_for_victims()
+
+            if self.supervisor.requires_intervention():
+                self.supervisor.assign_tasks()
 
         # Perform environment actions (firespread, etc.)
         if self.fire_manager is not None:
             self.fire_manager.spread_fire(self.ground_truth)
+        
         self.metrics.steps_taken += 1
         self._update_victim_metrics()
         self._update_area_explored()
@@ -77,7 +84,8 @@ class Simulator:
         res = [deepcopy(self.ground_truth)]
         for agent in self.agents:
             res.append(deepcopy(agent.perception))
-
+        if self.supervisor is not None:
+            res.append(deepcopy(self.supervisor.shared_belief))
         return res
 
     def run(self, steps: int) -> list[list[State]]:
@@ -88,9 +96,10 @@ class Simulator:
         steps: The maximum number of steps to perform
 
         Returns:
-        A list of size (#agents + 1) where
+        A list of size (#agents + 2) with supervisor, (#agents + 1) without where
         list[0] are the ground truth states
-        list[1:] are the states of the agents
+        list[1:#agents + 1] are the states of the agents
+        list[#agents + 1] are the supervisor states if supervisor is present
         First element of every list is the initial state before running the simulation
         """
         record: list[list[State]] = []
@@ -98,6 +107,8 @@ class Simulator:
         record.append([deepcopy(self.ground_truth)])
         for agent in self.agents:
             record.append([deepcopy(agent.perception)])
+        if self.supervisor is not None:
+            record.append([deepcopy(self.supervisor.shared_belief)])
 
         for _ in range(steps):
             # Record steps
@@ -310,7 +321,7 @@ class Simulator:
         self.ground_truth.agents.matrix = _place_agents(self.width, self.height, config.num_agents, rooms, self.ground_truth.victims)
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
 
-        self.add_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration))
+        self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration))
         self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
 
         self.ground_truth.confidence.matrix = np.ones((self.height, self.width))

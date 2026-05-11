@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from typing import Any
+from numpy.typing import NDArray
 
 class RunOutcome(Enum):
     IN_PROGRESS = "in_progress"
@@ -36,6 +38,18 @@ class VictimPresence(IntEnum):
     NOT_PRESENT = 0
     PRESENT = 1
 
+class EventPriority(IntEnum): # TODO to be extended with possible future events
+    """Lower number = Higher Priority"""
+    CRITICAL_VICTIM_FOUND = 1
+    SPATIAL_CONFLICT = 2
+    # PATH_BLOCKED = 4
+
+@dataclass
+class InterventionEvent:
+    priority: EventPriority
+    description: str
+    data: dict[str, Any] = None # Hold context
+    
 @dataclass
 class BaseCommand:
     target_x: int
@@ -85,25 +99,31 @@ class Task:
         else:
             raise ValueError(f"Unsupported TaskType: {self.task_type}")
 
-@dataclass
-class Tile:
-    x: int
-    y: int
-    traversability: TraversabilityLevel
-    vulnerability: VulnerabilityLevel
-    fire: FireLevel
-    victims: VictimPresence
-    agents: AgentPresence
-    confidence: float
+# @dataclass
+# class AgentTelemetry:
+#     agent_id: int
+#     current_x: float
+#     current_y: float
+#     current_status: str
+#     cost_to_go: float   # The MPC's mathematical estimate 
+#     local_discoveries: list
 
 @dataclass
-class AgentTelemetry:
-    agent_id: int
-    current_x: float
-    current_y: float
-    current_status: str
-    cost_to_go: float   # The MPC's mathematical estimate 
-    local_discoveries: list
+class Scan:
+    # metadata:
+    agent_name: str
+    agent_x: int 
+    agent_y: int
+
+    # data:
+    xs: NDArray
+    ys: NDArray
+    traversability: NDArray
+    vulnerability: NDArray
+    victims: NDArray
+    agents: NDArray
+    fire: NDArray
+    confidence: NDArray
 
 @dataclass
 class MapConfig:

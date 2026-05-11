@@ -1,12 +1,9 @@
 import numpy as np
 
 from .state import State
-from .constants import AgentAction
+from .constants import AgentAction, Scan
 import numpy as np
 
-from dataclasses import dataclass
-
-import numpy as np
 from numpy.typing import NDArray
 
 from tcod.map import compute_fov
@@ -14,18 +11,6 @@ from tcod.libtcodpy import FOV_RESTRICTIVE
 
 # Threshold for what value of traversability causes a tile to become 'opaque' to the LoS check
 LOS_THRESHOLD = 1
-
-@dataclass
-class Scan:
-    xs: NDArray
-    ys: NDArray
-    traversability: NDArray
-    vulnerability: NDArray
-    victims: NDArray
-    agents: NDArray
-    fire: NDArray
-    confidence: NDArray
-
 
 class Agent:
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
@@ -71,7 +56,7 @@ class Agent:
         ys, xs = np.nonzero(visible)
         conf = self.perception.confidence.matrix[visible]
 
-        return Scan(xs, ys, trvs, vuln, vict, agnt, fire, conf)
+        return Scan(self.name, self.x, self.y, xs, ys, trvs, vuln, vict, agnt, fire, conf)
 
     def move_to(self, x: int, y: int) -> None:
         """

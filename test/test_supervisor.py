@@ -7,4 +7,4 @@ class SupervisorTest(unittest.TestCase):
     def test_setup(self) -> None:
         self.simulator = Simulator(10, 10)
         self.supervisor = Supervisor(10, 10, 0.05)
-        self.simulator.add_supervisor(self.supervisor)
+        self.simulator.set_supervisor(self.supervisor)

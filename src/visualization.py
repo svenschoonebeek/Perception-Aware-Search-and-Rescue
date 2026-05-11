@@ -54,6 +54,9 @@ class Visualizer:
         self.selected_history_index = 0
 
         first_grid = self.all_histories[0][0]
+        self.num_agents = int((first_grid.agents.matrix == AgentPresence.PRESENT).sum())
+        self.has_supervisor = len(self.all_histories) > self.num_agents + 1
+
         self.rows, self.cols = first_grid.height, first_grid.width
 
         # Calculate cell size based on max grid dimensions
@@ -201,9 +204,9 @@ class Visualizer:
         pygame.draw.line(surface, COLORS["wall_highlight"], rect.topleft, rect.bottomleft, 2)
         pygame.draw.line(surface, COLORS["wall_shadow"], rect.bottomleft, rect.bottomright, 2)
         pygame.draw.line(surface, COLORS["wall_shadow"], rect.topright, rect.bottomright, 2)
-
+        
     def draw_perspective_selector(self):
-        """Draws buttons to switch between Ground Truth and Agents"""
+        """Draws buttons to switch between Ground Truth, Agents and Supervisor perspectives"""
         x, y = self.sidebar_x, self.selector_y
         self.draw_panel_frame(x, y, self.sidebar_w - 20, self.selector_h, "Perspective")
         
@@ -218,7 +221,12 @@ class Visualizer:
             color = COLORS["accent"] if self.selected_history_index == i else COLORS["panel_border"]
             pygame.draw.rect(self.screen, color, btn_rect, border_radius=4)
             
-            label = "GT" if i == 0 else f"A{i}"
+            label = "GT" 
+            if i != 0:
+                label = f"A{i}"
+            if self.has_supervisor and i == len(self.all_histories) - 1:
+                label = "SUP"
+            
             txt = self.small_font.render(label, True, COLORS["text"])
             self.screen.blit(txt, (btn_rect.centerx - txt.get_width()//2, btn_rect.centery - txt.get_height()//2))
 
