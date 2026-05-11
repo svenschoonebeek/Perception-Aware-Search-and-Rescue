@@ -1,6 +1,8 @@
 import pygame
 import sys
 
+from .constants import *
+
 COLORS = {
     "wall_base": (45, 55, 65), 
     "wall_highlight": (70, 85, 95), 
@@ -12,7 +14,12 @@ COLORS = {
     "panel_border": (60, 70, 85),
     "text": (210, 220, 230),      
     "accent": (40, 150, 255),     
-    "danger": (255, 80, 80),   
+    "danger": (255, 80, 80),
+    "vulnerable": (255, 170, 50),
+    "high_risk": (255, 50, 50),
+    "burning": (255, 100, 0),
+    "flammable": (255, 200, 0),
+    "burnt": (80, 80, 80),
 }
 
 class Checkbox:
@@ -37,14 +44,20 @@ class Checkbox:
         return False
 
 class Visualizer:
-    def __init__(self, history, cell_size=25):
+    def __init__(self, history, max_grid_w=800, max_grid_h=800):
         pygame.init()
+        pygame.display.set_caption("Search and Rescue Simulation Visualizer")
+
         #self.history = history
         self.all_histories = history
         self.ground_truth = history[0]
         self.selected_history_index = 0
 
-        self.cell_size = cell_size
+        first_grid = self.all_histories[0][0]
+        self.rows, self.cols = first_grid.height, first_grid.width
+
+        # Calculate cell size based on max grid dimensions
+        self.cell_size = min(max_grid_w // self.cols, max_grid_h // self.rows)
         self.current_step = 0
 
         # Fonts and dimensions
@@ -52,11 +65,15 @@ class Visualizer:
         self.small_font = pygame.font.SysFont("Arial", 14)
         first_grid = self.all_histories[0][0]
         self.rows, self.cols = first_grid.height, first_grid.width
-        self.grid_w, self.grid_h = self.cols * cell_size, self.rows * cell_size
+        self.grid_w, self.grid_h = self.cols * self.cell_size, self.rows * self.cell_size
         self.sidebar_w, self.bottom_h = 200, 80
         
         self.screen = pygame.display.set_mode((self.grid_w + self.sidebar_w, self.grid_h + self.bottom_h))
         
+        # pre-rendered wall layer for performance
+        self.wall_layer = pygame.Surface((self.grid_w, self.grid_h), pygame.SRCALPHA)
+        self.pre_draw_walls()
+
         # Adaptive ui layout math
         self.sidebar_x = self.grid_w + 10
         padding = 15
@@ -82,7 +99,9 @@ class Visualizer:
             Checkbox(self.grid_w + 20, 50, "Traversability", True),
             Checkbox(self.grid_w + 20, 80, "Victims", True),
             Checkbox(self.grid_w + 20, 110, "Agents", True),
-            Checkbox(self.grid_w + 20, 140, "Confidence Map", False),
+            Checkbox(self.grid_w + 20, 140, "Vulnerability", True),
+            Checkbox(self.grid_w + 20, 170, "Fire", True),
+            Checkbox(self.grid_w + 20, 200, "Confidence", False),
         ]
         self.layers_panel_h = (len(self.checkboxes) * row_h) + header_h
 
@@ -119,6 +138,29 @@ class Visualizer:
         except:
             print("Sprites not found in assets folder, falling back to shapes.")
             self.use_sprites = False
+        
+        self.fire_burning_surf = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+        self.fire_burning_surf.fill(COLORS["burning"] + (180,))
+
+        self.fire_flammable_surf = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+        self.fire_flammable_surf.fill(COLORS["flammable"] + (180,))
+
+        self.fire_burnt_surf = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+        self.fire_burnt_surf.fill(COLORS["burnt"] + (180,))
+
+        self.conf_surfaces = []
+        for i in range(11): 
+            surf = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+            alpha = int((i / 10.0) * 170)
+            surf.fill((250, 180, 0, alpha))
+            self.conf_surfaces.append(surf)
+
+        self.vuln_surfaces = {
+            VulnerabilityLevel.VULNERABLE: pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA),
+            VulnerabilityLevel.HIGH_RISK: pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA),
+        }
+        self.vuln_surfaces[VulnerabilityLevel.VULNERABLE].fill(COLORS["vulnerable"] + (80,))
+        self.vuln_surfaces[VulnerabilityLevel.HIGH_RISK].fill(COLORS["high_risk"] + (80,))
 
     def generate_static_background(self):
         """ makes grid, sidebar, and footer into one static image"""
@@ -144,13 +186,21 @@ class Visualizer:
         self.screen.blit(header_surf, (x + 10, y + 10))
         pygame.draw.line(self.screen, COLORS["panel_border"], (x + 10, y + 28), (x + w - 10, y + 28))
    
-    def draw_beveled_wall(self, x, y):
+    def pre_draw_walls(self):
+            self.wall_layer.fill((0, 0, 0, 0))
+            initial_state = self.all_histories[0][0] 
+            for y in range(self.rows):
+                for x in range(self.cols):
+                    if initial_state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                        self.draw_beveled_wall(self.wall_layer, x, y)
+
+    def draw_beveled_wall(self, surface, x, y):
         rect = pygame.Rect(x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size)
-        pygame.draw.rect(self.screen, COLORS["wall_base"], rect)
-        pygame.draw.line(self.screen, COLORS["wall_highlight"], rect.topleft, rect.topright, 2)
-        pygame.draw.line(self.screen, COLORS["wall_highlight"], rect.topleft, rect.bottomleft, 2)
-        pygame.draw.line(self.screen, COLORS["wall_shadow"], rect.bottomleft, rect.bottomright, 2)
-        pygame.draw.line(self.screen, COLORS["wall_shadow"], rect.topright, rect.bottomright, 2)
+        pygame.draw.rect(surface, COLORS["wall_base"], rect)
+        pygame.draw.line(surface, COLORS["wall_highlight"], rect.topleft, rect.topright, 2)
+        pygame.draw.line(surface, COLORS["wall_highlight"], rect.topleft, rect.bottomleft, 2)
+        pygame.draw.line(surface, COLORS["wall_shadow"], rect.bottomleft, rect.bottomright, 2)
+        pygame.draw.line(surface, COLORS["wall_shadow"], rect.topright, rect.bottomright, 2)
 
     def draw_perspective_selector(self):
         """Draws buttons to switch between Ground Truth and Agents"""
@@ -186,50 +236,71 @@ class Visualizer:
         self.screen.blit(self.full_bg, (0, 0))
         state = self.all_histories[self.selected_history_index][self.current_step]
 
-        # 2. simulation data
-        # traversability
-        if self.checkboxes[0].active:
-            for y in range(self.rows):
-                for x in range(self.cols):
-                    if state.traversability.matrix[y][x] == 1:
-                        self.draw_beveled_wall(x, y)
+        show_trav = self.checkboxes[0].active
+        show_vict = self.checkboxes[1].active
+        show_agnt = self.checkboxes[2].active
+        show_vuln = self.checkboxes[3].active
+        show_fire = self.checkboxes[4].active
+        show_conf = self.checkboxes[5].active
 
-        # victims
-        if self.checkboxes[1].active:
-            for y in range(self.rows):
-                for x in range(self.cols):
-                    if state.victims.matrix[y][x] == 1:
-                        if self.use_sprites:
-                            self.screen.blit(self.victim_sprite, (x * self.cell_size, y * self.cell_size))
-                        else:
-                            pygame.draw.circle(self.screen, COLORS["victim"], (x*self.cell_size+12, y*self.cell_size+12), 8)
+        # show traversability as a separate layer for performance
+        if show_trav and self.selected_history_index == 0:
+            self.screen.blit(self.wall_layer, (0, 0))
+        
+        # Single pass rendering loop
+        for y in range(self.rows):
+            for x in range(self.cols):
+                # Calculate coordinates once per cell
+                px = x * self.cell_size
+                py = y * self.cell_size
 
-        # agents
-        if self.checkboxes[2].active:
-            for y in range(self.rows):
-                for x in range(self.cols):
-                    if state.agents.matrix[y][x] == 1:
-                        if self.use_sprites:
-                            self.screen.blit(self.agent_sprite, (x * self.cell_size, y * self.cell_size))
-                        else:
-                            pygame.draw.rect(self.screen, COLORS["agent"], (x*self.cell_size+4, y*self.cell_size+4, 17, 17))
+                if show_trav and self.selected_history_index != 0:
+                    if state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                        self.draw_beveled_wall(self.screen, x, y)
+                
+                # Fire
+                if show_fire:
+                    fire_level = state.fire.matrix[y][x]
+                    if fire_level == FireLevel.BURNING:
+                        self.screen.blit(self.fire_burning_surf, (px, py))
+                    elif fire_level == FireLevel.FLAMMABLE:
+                        self.screen.blit(self.fire_flammable_surf, (px, py))
+                    elif fire_level == FireLevel.BURNT:
+                        self.screen.blit(self.fire_burnt_surf, (px, py))
 
-        # confidence
-        if self.checkboxes[3].active:
-            conf_tile = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
-            
-            for y in range(self.rows):
-                for x in range(self.cols):
+                # Confidence
+                if show_conf:
                     conf_val = state.confidence.matrix[y][x]
                     if conf_val > 0:
-                        conf_tile.fill((0, 0, 0, 0))
-            
-                        alpha = int(conf_val * 170) 
-                        color = (250, 180, 0, alpha)
-                        
-                        pygame.draw.rect(conf_tile, color, conf_tile.get_rect())
-                        self.screen.blit(conf_tile, (x * self.cell_size, y * self.cell_size))
+                        conf_idx = min(10, max(1, int(conf_val * 10)))  # Map confidence to 0-10
+                        self.screen.blit(self.conf_surfaces[conf_idx], (px, py))
 
+                # Victims
+                if show_vict and state.victims.matrix[y][x] == VictimPresence.PRESENT:
+                    if self.use_sprites:
+                        self.screen.blit(self.victim_sprite, (px, py))
+                    else:
+                        center_x = int(px + self.cell_size / 2)
+                        center_y = int(py + self.cell_size / 2)
+                        radius = max(1, int(self.cell_size * 0.35))
+                        pygame.draw.circle(self.screen, COLORS["danger"], (center_x, center_y), radius)
+
+                # Agents
+                if show_agnt and state.agents.matrix[y][x] == AgentPresence.PRESENT:
+                    if self.use_sprites:
+                        self.screen.blit(self.agent_sprite, (px, py))
+                    else:
+                        pad = self.cell_size * 0.15
+                        size = max(1, self.cell_size * 0.7)
+                        pygame.draw.rect(self.screen, COLORS["accent"], (px + pad, py + pad, size, size))
+
+                # Vulnerability
+                if show_vuln:
+                    vuln_val = state.vulnerability.matrix[y][x]
+                    if vuln_val in self.vuln_surfaces:
+                        self.screen.blit(self.vuln_surfaces[vuln_val], (px, py))
+
+        
         # 3. SIDEBAR PANELS
         self.draw_perspective_selector()
 
@@ -252,7 +323,15 @@ class Visualizer:
         pygame.draw.rect(self.screen, (60, 60, 70), self.slider_rect, border_radius=4)
         progress = self.current_step / max(1, (len(self.ground_truth) - 1))
         handle_x = self.slider_rect.x + (progress * self.slider_rect.width)
-        pygame.draw.circle(self.screen, COLORS["accent"], (int(handle_x), self.slider_rect.centery), 10)
+
+        if self.is_dragging_slider:
+            handle_radius = 14
+            handle_color = COLORS["accent"]
+        else:
+            handle_radius = 10
+            handle_color = (200, 200, 200)
+
+        pygame.draw.circle(self.screen, handle_color, (int(handle_x), self.slider_rect.centery), handle_radius)
         
     def run(self):
         clock = pygame.time.Clock()
@@ -271,8 +350,13 @@ class Visualizer:
                     if self.play_button_rect.collidepoint(event.pos):
                        self.is_playing = not self.is_playing
                     
-                    if self.slider_rect.collidepoint(event.pos):
+                    slider_hitbox = self.slider_rect.inflate(30, 30)
+                    if slider_hitbox.collidepoint(event.pos):
                         self.is_dragging_slider = True
+                        
+                        # Instantly snap to click position
+                        rel_x = max(0, min(event.pos[0] - self.slider_rect.x, self.slider_rect.width))
+                        self.current_step = int((rel_x / self.slider_rect.width) * (len(self.ground_truth) - 1))
 
                 # Unclick events
                 if event.type == pygame.MOUSEBUTTONUP:

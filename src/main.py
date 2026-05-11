@@ -4,8 +4,8 @@ from .agents.random import RandAgent
 from .agent import Agent
 from .visualization import Visualizer
 
-WIDTH = 50
-HEIGHT = 50
+WIDTH = 40
+HEIGHT = 40
 
 def main():
     sim = Simulator(WIDTH, HEIGHT)
@@ -27,7 +27,7 @@ def main():
     history = sim.run(2) 
 
     print("Launching Visualizer...")
-    viz = Visualizer(history, cell_size=50)
+    viz = Visualizer(history)
     viz.run()
 
 if __name__ == "__main__":
