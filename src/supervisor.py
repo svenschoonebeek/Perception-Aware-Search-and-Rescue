@@ -1,17 +1,21 @@
 from typing import cast
-
 import numpy as np
+import logging
 
 from .agent import Agent
 from .state import State
 from .constants import *
-from scipy.ndimage import label, center_of_mass
+from scipy.ndimage import binary_dilation, label, center_of_mass
+from scipy.spatial.distance import cdist
+
+logger = logging.getLogger(__name__)
 
 class Supervisor:
     def __init__(self, width: int, height: int, decay: float):
         self.shared_belief = State(width, height)
-        self.active_tasks = []
-
+        self.shared_belief.traversability.matrix = np.full((height, width), TraversabilityLevel.TRAVERSABLE)
+        self.global_explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the supervisor has received information about
+        
         self.decay = decay # Certainty decay per time step [0,1]
         self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
 
@@ -41,6 +45,8 @@ class Supervisor:
 
         for scan in agent_scans:
             self.agent_tracker[scan.agent_name] = (scan.agent_x, scan.agent_y)
+            self.global_explored[scan.xs, scan.ys] = True
+
             for x, y, trvs, vuln, vict, agnt, fire, conf in zip(scan.xs, scan.ys, scan.traversability, scan.vulnerability, scan.victims, scan.agents, scan.fire, scan.confidence):
                 if (conf > self.shared_belief.confidence.matrix[y][x]):
                     self.shared_belief.traversability[y][x] = trvs
@@ -66,6 +72,8 @@ class Supervisor:
         
         conflict_distance_threshold = self.agent_scan_radius * 1.5 
 
+        conflicting_agent_names = set()
+
         # Check pairwise distances between agents 
         for i in range(len(positions)):
             for j in range(i + 1, len(positions)):
@@ -75,15 +83,20 @@ class Supervisor:
                 distance = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
                 
                 if distance < conflict_distance_threshold:
-                    print(f"Spatial Conflict Detected between {names[i]} and {names[j]}! Distance: {distance:.1f}")
-                    self.trigger_event(InterventionEvent(
-                        priority=EventPriority.SPATIAL_CONFLICT,
-                        description=f"Spatial Conflict Detected between {names[i]} and {names[j]}! Distance: {distance:.1f}",
-                        data={"agents": (names[i], names[j])}
-                    ))
-                    self.spatial_conflict_cooldown = 5
-                    # TODO change this such that it doesn't return instantly, we want auction between all conflicting agents not just first pair
-                    return
+                    logger.debug(f"Spatial Conflict Detected between {names[i]} and {names[j]}! Distance: {distance:.1f}")
+                    conflicting_agent_names.add(names[i])
+                    conflicting_agent_names.add(names[j])
+
+        if conflicting_agent_names:
+            logger.debug(f"Triggering conflict resolution for: {conflicting_agent_names}")
+            
+            self.trigger_event(InterventionEvent(
+                priority=EventPriority.SPATIAL_CONFLICT,
+                description=f"Spatial Conflict involving {len(conflicting_agent_names)} agents.",
+                data={"agents": list(conflicting_agent_names)} 
+            ))
+        
+        self.spatial_conflict_cooldown = 3
 
     def check_for_victims(self) -> None:
         pass
@@ -99,59 +112,50 @@ class Supervisor:
                 conflicting_agents = [a for a in agents if a.name in conflicting_agent_names]
                 self._run_burgard_frontier_auction(conflicting_agents)
 
+
+    def _extract_frontiers(self) -> list:
+        explored = np.array(self.global_explored, dtype=bool)
+        traversable = self.shared_belief.traversability.matrix == TraversabilityLevel.TRAVERSABLE
         
-    def _extract_frontiers(self) -> list[tuple[int, int]]:
-        """
-        Extracts frontier cells from the shared belief state for task assignment
-
-        Returns:
-        A list of (x, y) tuples representing frontier cell coordinates
-        """
+        unexplored_and_traversable = (~explored) & traversable        
+        cross_structure = np.array([[0, 1, 0],
+                                    [1, 1, 1],
+                                    [0, 1, 0]])
         
-        conf_matrix = self.shared_belief.confidence.matrix
-        trvs_matrix = self.shared_belief.traversability.matrix
-
-        unknown_mask = conf_matrix == 0
-        candidate_mask = (conf_matrix > 0) & (trvs_matrix == TraversabilityLevel.TRAVERSIBLE)
-
-        up_unknown = np.roll(unknown_mask, shift=-1, axis=0)
-        up_unknown[-1, :] = False
-
-        down_unknown = np.roll(unknown_mask, shift=1, axis=0)
-        down_unknown[0, :] = False
-
-        left_unknown = np.roll(unknown_mask, shift=-1, axis=1)
-        left_unknown[:, -1] = False
-
-        right_unknown = np.roll(unknown_mask, shift=1, axis=1)
-        right_unknown[:, 0] = False
-
-        borders_unknown = up_unknown | down_unknown | left_unknown | right_unknown
-        frontier_mask = candidate_mask & borders_unknown
-
-        # clustering for frontier reduction
-        structure = np.ones((3, 3), dtype=int)
+        adjacent_to_unexplored = binary_dilation(unexplored_and_traversable, structure=cross_structure)
+        
+        frontier_mask = explored & traversable & adjacent_to_unexplored
+        
+        # grouping_structure = np.ones((3, 3), dtype=int)
         labeled_mask, num_regions_raw = cast(
-            tuple[np.ndarray, float],
-            label(frontier_mask, structure=structure)
+            tuple[np.ndarray, int],
+            label(frontier_mask, structure=cross_structure)
             )
-
-        num_regions = int(num_regions_raw)
-        region_centroids: list[tuple[int, int]] = []
-
-        for i in range(1, num_regions + 1):
-            mass_center = cast(tuple[float, float], center_of_mass(frontier_mask, labeled_mask, i))
-            cy, cx = mass_center
-            region_centroids.append((int(cx), int(cy)))
-
-        return region_centroids
+        
+        centroids = []
+        
+        for i in range(1, num_regions_raw + 1):
+            coords = np.argwhere(labeled_mask == i)
+            
+            if len(coords) == 0:
+                continue
+            
+            mean_coord = coords.mean(axis=0)
+            
+            distances = cdist([mean_coord], coords)
+            closest_idx = np.argmin(distances)
+            best_coord = coords[closest_idx]
+            
+            centroids.append(tuple(best_coord))
+            
+        return centroids
         
     def _run_burgard_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
         """
         Runs a Burgard-style frontier auction to assign new exploration tasks to the conflicting agents
         """
         frontiers = self._extract_frontiers()
-        print(f"Extracted frontiers: {frontiers}")
+        logger.debug(f"Extracted frontiers: {frontiers}")
         if not frontiers:
             return
         
@@ -184,10 +188,10 @@ class Supervisor:
                 break
             
             bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
-            winning_agent.current_task = bound_task
-            winning_agent.current_path = []  # force path recalculation toward new frontier
+            winning_agent.set_current_task(bound_task)
+            winning_agent.set_current_path([])  # force path recalculation toward new frontier
 
-            print(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
+            logger.debug(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
             claimed_targets.append(best_frontier)
             unassigned_frontiers.remove(best_frontier)
             available_agents.remove(winning_agent)
@@ -197,7 +201,7 @@ class Supervisor:
         Runs a frontier auction using Least Contested Bid to assign new exploration tasks to the conflicting agents
         """
         frontiers = self._extract_frontiers()
-        print(f"Extracted frontiers: {frontiers}")
+        logger.debug(f"Extracted frontiers: {frontiers}")
         if not frontiers:
             return
         
@@ -248,7 +252,7 @@ class Supervisor:
             winning_agent.current_task = bound_task
             winning_agent.current_path = []  # force path recalculation toward new frontier
 
-            print(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
+            logger.debug(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
             unassigned_frontiers.remove(best_frontier)
             available_agents.remove(winning_agent)
         

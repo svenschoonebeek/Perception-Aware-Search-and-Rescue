@@ -30,20 +30,24 @@ def main():
     setup_logging(args.debug)
 
     sim = Simulator(WIDTH, HEIGHT)
-    config = MapConfig(num_rooms=5, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=4, min_tunnel_thickness=2
+    config = MapConfig(num_rooms=7, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=4, min_tunnel_thickness=2
                        , initial_fire_points=0)
-    sim.generate_ground_truth(config)
+    sim.generate_ground_truth(config, 809315671) #
 
     # Saved seeds: 182840517 (181 steps); 
 
-    agent1 = TaskMpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, True)
+    agent1 = TaskMpcAgent("tasker1", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
+    # agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.05, 0.9, 4, False)
     # agent1 = RandAgent("randy", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
-    # agent1 = Agent("mpc", 0, 1, WIDTH, HEIGHT, 0.05, 0.9, 4, False)
     sim.add_agent(agent1)
 
+    agent2 = TaskMpcAgent("tasker2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
+    # agent2 = MpcAgent("tasker2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # agent2 = RandAgent("rand2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
-    agent2 = TaskMpcAgent("mpc2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     sim.add_agent(agent2)
+
+    # agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
+    # sim.add_agent(agent3)
 
     supervisor = Supervisor(WIDTH, HEIGHT, 0.05)
     sim.set_supervisor(supervisor)
@@ -53,7 +57,7 @@ def main():
     #                    sim.ground_truth.fire)
 
     logger.info("Running Simulation steps...")
-    history = sim.run(100) 
+    history = sim.run(200) 
 
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)

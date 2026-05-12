@@ -68,7 +68,7 @@ class FireManager:
                 if not (0 <= new_x < self.width and 0 <= new_y < self.height):
                     continue
 
-                is_traversable = ground_truth.traversability[new_y][new_x] == TraversabilityLevel.TRAVERSIBLE
+                is_traversable = ground_truth.traversability[new_y][new_x] == TraversabilityLevel.TRAVERSABLE
                 if not (is_traversable):
                     continue
 
@@ -98,7 +98,7 @@ class FireManager:
             if not (0 <= nx < self.width and 0 <= ny < self.height):
                 continue
                 
-            if ground_truth.traversability[ny, nx] == TraversabilityLevel.UNTRAVERSIBLE:
+            if ground_truth.traversability[ny, nx] == TraversabilityLevel.UNTRAVERSABLE:
                 continue
                 
             if ground_truth.fire[ny, nx] == FireLevel.SAFE:

@@ -27,8 +27,8 @@ class VulnerabilityLevel(float, Enum): #? Maybe create a separate TUNNEL vulnera
     HIGH_RISK = 1.0
 
 class TraversabilityLevel(IntEnum):
-    TRAVERSIBLE = 0
-    UNTRAVERSIBLE = 1
+    TRAVERSABLE = 0
+    UNTRAVERSABLE = 1
 
 class AgentPresence(IntEnum):
     NOT_PRESENT = 0

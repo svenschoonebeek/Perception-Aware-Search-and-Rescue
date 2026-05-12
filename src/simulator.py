@@ -57,7 +57,7 @@ class Simulator:
             self.metrics.record_snapshot()  # capture initial metric state
 
         intents = self._collect_intents()
-        print(f"Intents: {{ {', '.join(f'{agent.name}: {intents[agent]}' for agent in self.agents)} }}")
+        logger.debug(f"Intents: {{ {', '.join(f'{agent.name}: {intents[agent]}' for agent in self.agents)} }}")
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
         self._apply_vulnerability_damage()
@@ -67,7 +67,8 @@ class Simulator:
         for agent in self.agents:
             agent_scans.append(agent.scan(self.ground_truth))
             agent.check_task_status()
-            print(f"{agent.name}: ({agent.x}, {agent.y}) with task {agent.current_task.task_type}")
+            if (task := agent.get_current_task()) is not None:
+                logger.debug(f"Agent {agent.name} has task {task.task_type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
         
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
@@ -149,7 +150,7 @@ class Simulator:
             if not (0 <= tx < self.width and 0 <= ty < self.height):
                 self.metrics.record_terrain_collision(agent)
                 intents[agent] = (agent.x, agent.y)
-            elif self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSIBLE:
+            elif self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSABLE:
                 self.metrics.record_terrain_collision(agent)
                 intents[agent] = (agent.x, agent.y)
             elif self.ground_truth.victims[ty][tx] == VictimPresence.PRESENT:
@@ -253,7 +254,7 @@ class Simulator:
         """
         Update each agent's fraction of traversable cells they have ever scanned.
         """
-        traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSIBLE)
+        traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSABLE)
         total = int(traversable.sum())
         self.metrics.total_traversable = total
         if total == 0:
@@ -333,7 +334,7 @@ def _generate_traversability_matrix(
     if not (0 <= u_p <= 1):
         raise ValueError(f"probability of unconnected rooms should be between 0 and 1 but was: {u_p}")
     
-    matrix = np.full((y, x), TraversabilityLevel.UNTRAVERSIBLE)
+    matrix = np.full((y, x), TraversabilityLevel.UNTRAVERSABLE)
     room_seeds = np.zeros((2, n + 1), dtype=int)
     rooms = []
     tunnels = []
@@ -350,7 +351,7 @@ def _generate_traversability_matrix(
     x_end = s_width
     y_start = 0
     y_end = s_length
-    matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSIBLE
+    matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSABLE
     #? Should we store the first room in the rooms list?
 
     # create rooms and store their centers in room_seeds
@@ -372,7 +373,7 @@ def _generate_traversability_matrix(
         y_start = max(0, f - half_random_length)
         y_end = min(y, f + half_random_length + 1)
 
-        matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSIBLE
+        matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSABLE
         rooms.append({
             'x_range': (x_start, x_end),
             'y_range': (y_start, y_end),
@@ -394,11 +395,11 @@ def _generate_traversability_matrix(
             if (direction == 1): # horizontal first, then vertical # TODO probably should also return the tunnels same as with rooms
                 hx_bounds = get_bounds(a_x, b_x)
                 hy_bounds = (max(0, a_y - half_tunnel_width), min(y, a_y + half_tunnel_width + 1))
-                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
                 
                 vx_bounds = (max(0, b_x - half_tunnel_width), min(x, b_x + half_tunnel_width + 1))
                 vy_bounds = get_bounds(a_y, b_y)
-                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
                 
                 tunnels.append({
                     'horizontal_x_range': hx_bounds,
@@ -409,11 +410,11 @@ def _generate_traversability_matrix(
             else: # vertical first, then horizontal
                 vx_bounds = (max(0, a_x - half_tunnel_width), min(x, a_x + half_tunnel_width + 1))
                 vy_bounds = get_bounds(a_y, b_y)
-                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
                 
                 hx_bounds = get_bounds(a_x, b_x)
                 hy_bounds = (max(0, b_y - half_tunnel_width), min(y, b_y + half_tunnel_width + 1))
-                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
 
                 tunnels.append({
                     'horizontal_x_range': hx_bounds,

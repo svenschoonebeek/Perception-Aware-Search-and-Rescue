@@ -133,7 +133,7 @@ class MpcAgent(Agent):
 
         adjacent_mask = binary_dilation(ignited_mask)
         safe_mask = predicted_fire == FireLevel.SAFE
-        traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+        traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSABLE
         exposed_mask = adjacent_mask & safe_mask & traversable_mask
         predicted_fire[exposed_mask] = FireLevel.FLAMMABLE
 
@@ -159,7 +159,7 @@ class MpcAgent(Agent):
 
             adjacent_mask = binary_dilation(ignited_mask)
             safe_mask = current_fire == FireLevel.SAFE
-            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSABLE
             exposed_mask = adjacent_mask & safe_mask & traversable_mask
             current_fire[exposed_mask] = FireLevel.FLAMMABLE
 

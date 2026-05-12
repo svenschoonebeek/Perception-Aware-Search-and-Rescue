@@ -1,5 +1,5 @@
 from collections import deque
-
+import logging
 import numpy as np
 from numpy.typing import NDArray
 from typing import Self
@@ -7,6 +7,8 @@ from scipy.ndimage import binary_dilation
 
 from src.agent import Agent, AgentAction
 from src.constants import FireLevel, Task, TaskType, TraversabilityLevel
+
+logger = logging.getLogger(__name__)
 
 class TaskMpcAgent(Agent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
@@ -18,6 +20,10 @@ class TaskMpcAgent(Agent):
         self.horizon = 3
         self.discount = 0.9 # Discount factor, nearer moves are more important than later moves
         self.fire_spread_rate = 0.3
+
+        # Task info
+        self.current_task = Task(TaskType.IDLE, -1, -1)
+        self.current_path: list[tuple[int, int]] = []
     
     def copy(self) -> Self:
         copy = super().copy()
@@ -26,9 +32,20 @@ class TaskMpcAgent(Agent):
         copy.discount = self.discount
         copy.fire_spread_rate = self.fire_spread_rate
 
-        copy.current_path = self.current_path.copy()
+        copy.current_path = list(self.current_path)
+        copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
+
         return copy
 
+    def get_current_task(self) -> Task:
+        return self.current_task
+    
+    def set_current_task(self, task: Task) -> None:
+        self.current_task = task
+
+    def set_current_path(self, path: list[tuple[int, int]]) -> None:
+        self.current_path = path
+    
     def get_action(self) -> AgentAction: 
         """
         Decides what action to perform using exhaustive search
@@ -57,10 +74,75 @@ class TaskMpcAgent(Agent):
                     best_sequence = [action] + future_seq
 
             return best_objective, best_sequence
-
+        
         best_objective, best_sequence = dfs(self.copy(), 1, 0)
 
         return best_sequence[0]
+    
+    def check_task_status(self) -> None:
+        """
+        Checks whether the current task is completed, and if so, switches to idle
+        """
+        if self.current_task.task_type == TaskType.IDLE:
+            return
+        
+        if self.current_task.task_type == TaskType.EXPLORE:
+            distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
+            if distance_to_target <= self.scan_radius / 2.0:
+                self._return_to_idle()
+    
+    def _calculate_path(self, target_x: int, target_y: int) -> list[tuple[int, int]]:
+        """
+        Calculates a path from the agent's current position to the target using BFS.
+        Returns a list of (x, y) coordinates representing the path.
+        """
+        start = (self.x, self.y)
+        target = (target_x, target_y)
+        
+        if start == target:
+            return [start]
+            
+        queue = deque([[start]])
+        seen = set([start])
+        
+        while queue:
+            path = queue.popleft()
+            x, y = path[-1]
+            
+            if (x, y) == target:
+                return path
+                
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                
+                if 0 <= nx < self.world_width and 0 <= ny < self.world_height:
+                    if (nx, ny) not in seen:
+                        if self.perception.traversability[ny][nx] != TraversabilityLevel.UNTRAVERSABLE:
+                            seen.add((nx, ny))
+                            queue.append(path + [(nx, ny)])
+                            
+        return []
+    
+    def _is_path_blocked(self) -> bool:
+        """
+        Checks if the currently planned path contains any newly discovered walls or fires.
+        """
+        for x, y in self.current_path:
+            # Did we just discover a wall here?
+            if self.perception.traversability[y][x] == TraversabilityLevel.UNTRAVERSABLE:
+                return True
+            #? should count fire as blocking? I don't think so
+            # if self.perception.fire[y][x] == FireLevel.BURNING:
+            #     return True
+                
+        return False
+    
+    def _return_to_idle(self) -> None:
+        """
+        Helper function to return to idle state after completing a task
+        """
+        self.current_task = Task(TaskType.IDLE, -1, -1)
+        self.current_path = []
     
     def _objective(self) -> float:
         if (self.current_task.task_type == TaskType.EXPLORE):
@@ -111,17 +193,17 @@ class TaskMpcAgent(Agent):
             self.current_path = self._calculate_path(self.current_task.x, self.current_task.y)
         
         if len(self.current_path) == 0:
-            return (self.x, self.y)
-        
-        while len(self.current_path) > 0 and self.current_path[0] == (self.x, self.y):
-            self.current_path.pop(0)
-        
-        if len(self.current_path) > 2:
-            return self.current_path[2]
-        elif len(self.current_path) > 0:
-            return self.current_path[-1]
-        else:
             return (self.current_task.x, self.current_task.y)
+        
+        current_idx = 0
+        for i, (px, py) in enumerate(self.current_path):
+            if (px, py) == (self.x, self.y):
+                current_idx = i
+                break
+        
+        # look 2 steps ahead on the path, this will be the carrot
+        lookahead_idx = min(current_idx + 2, len(self.current_path) - 1)
+        return self.current_path[lookahead_idx]
 
     def _predict_next_state(self, action: AgentAction) -> "TaskMpcAgent": # <- Apparently how to do forward declaration
         """
@@ -177,7 +259,7 @@ class TaskMpcAgent(Agent):
 
         adjacent_mask = binary_dilation(ignited_mask)
         safe_mask = predicted_fire == FireLevel.SAFE
-        traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+        traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSABLE
         exposed_mask = adjacent_mask & safe_mask & traversable_mask
         predicted_fire[exposed_mask] = FireLevel.FLAMMABLE
 
@@ -203,7 +285,7 @@ class TaskMpcAgent(Agent):
 
             adjacent_mask = binary_dilation(ignited_mask)
             safe_mask = current_fire == FireLevel.SAFE
-            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSABLE
             exposed_mask = adjacent_mask & safe_mask & traversable_mask
             current_fire[exposed_mask] = FireLevel.FLAMMABLE
 
@@ -228,6 +310,9 @@ class TaskMpcAgent(Agent):
             return False
 
         if self.perception.victims[target_cell_y][target_cell_x] == 1: # Hit victim
+            return False
+        
+        if self.perception.agents[target_cell_y][target_cell_x] == 1:
             return False
         
         return self.perception.traversability[target_cell_y][target_cell_x] == 0 # Didn't hit wall

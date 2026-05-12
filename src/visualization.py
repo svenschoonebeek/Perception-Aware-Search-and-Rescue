@@ -204,7 +204,7 @@ class Visualizer:
             initial_state = self.all_histories[0][0] 
             for y in range(self.rows):
                 for x in range(self.cols):
-                    if initial_state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                    if initial_state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSABLE:
                         self.draw_beveled_wall(self.wall_layer, x, y)
 
     def draw_beveled_wall(self, surface, x, y):
@@ -273,7 +273,7 @@ class Visualizer:
                 py = y * self.cell_size
 
                 if show_trav and self.selected_history_index != 0:
-                    if state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                    if state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSABLE:
                         self.draw_beveled_wall(self.screen, x, y)
                 
                 # Fire
