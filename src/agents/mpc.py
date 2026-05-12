@@ -1,10 +1,11 @@
-import itertools
 import numpy as np
-import random
-from copy import deepcopy
+from numpy.typing import NDArray
+
+from typing import Self
+
+from scipy.ndimage import binary_dilation
 
 from src.agent import Agent, AgentAction
-from src.state import State
 from src.constants import FireLevel, TraversabilityLevel
 
 class MpcAgent(Agent):
@@ -14,8 +15,18 @@ class MpcAgent(Agent):
         
         # How many steps ahead to simulate.
         # The number of deep-copies of the agent made when calculating the action to take will be 5^horizon
-        self.horizon = 3 
-        self.gamma = 0.9 # Discount factor, nearer moves are more important than later moves
+        self.horizon = 3
+        self.discount = 0.9 # Discount factor, nearer moves are more important than later moves
+        self.fire_spread_rate = 0.3
+    
+    def copy(self) -> Self:
+        copy = super().copy()
+
+        copy.horizon = self.horizon
+        copy.discount = self.discount
+        copy.fire_spread_rate = self.fire_spread_rate
+
+        return copy
 
     def get_action(self) -> AgentAction:
         """
@@ -24,26 +35,29 @@ class MpcAgent(Agent):
         Returns:
         The action the agent wants to perform, decided using MPC
         """
-        best_sequence = [AgentAction.WAIT] * self.horizon
-        best_objective = float('-inf')
+        def dfs(model_state: MpcAgent, depth: int, objective: float) -> tuple[float, list]:
+            if depth > self.horizon:
+                return objective, []
 
-        for sequence in itertools.product(AgentAction, repeat=self.horizon):
-            model_state = deepcopy(self)
+            best_objective = float('-inf')
+            best_sequence = []
 
-            total_objective = 0.0
-            feasible = True
-
-            for step, action in enumerate(sequence):
+            for action in AgentAction:
                 if not model_state._is_feasible(action):
-                    feasible = False
-                    break
+                    continue
 
-                model_state = model_state._predict_next_state(action)
-                total_objective += (self.gamma ** step) * model_state._objective()
-            
-            if feasible and total_objective > best_objective:
-                best_sequence = sequence
-                best_objective = total_objective
+                next_state = model_state._predict_next_state(action)
+                next_objective = objective + (self.discount ** depth * next_state._objective())
+                
+                future_obj, future_seq = dfs(next_state, depth + 1, next_objective)
+                
+                if future_obj > best_objective:
+                    best_objective = future_obj
+                    best_sequence = [action] + future_seq
+
+            return best_objective, best_sequence
+
+        best_objective, best_sequence = dfs(self.copy(), 1, 0)
 
         return best_sequence[0]
 
@@ -54,7 +68,7 @@ class MpcAgent(Agent):
         Returns:
         The objective value
         """
-        w_exploration, w_safety, w_confidence = 400, 1, 100 # To be adjusted
+        w_exploration, w_safety, w_confidence = 100, 20, 1 # To be adjusted
 
         exploration =  w_exploration * self._exploration_score()
         safety      = -w_safety * self._safety_penalty()
@@ -75,7 +89,7 @@ class MpcAgent(Agent):
         Returns:
         The predicted next state
         """
-        new_agent = deepcopy(self)
+        new_agent = self.copy()
 
         match action:
             case AgentAction.MOVE_UP:
@@ -100,36 +114,57 @@ class MpcAgent(Agent):
 
         return new_agent
 
-    def _predict_fire_spread(self) -> np.ndarray:
+    def _predict_fire_spread(self) -> NDArray:
         """
         Predicts the spread of fire.
         Does so probabilistically (where random.random() should be seeded), and with an educated guess on spread rate
 
         Returns:
-        A predicted fire matrix
+        The predicted fire matrix
         """
         # Probabilistically (Randomly (seeded) ignite, educated guess on spread rate)
-        predicted_spread_rate = 0.3
-        predicted_fire = deepcopy(self.perception.fire.matrix)
-
-        for y in range(self.world_height):
-            for x in range(self.world_width):
-                if self.perception.fire[y][x] == FireLevel.FLAMMABLE and random.random() < predicted_spread_rate:
-                    predicted_fire[y][x] = FireLevel.BURNING
-                    
-                    directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                    for dx, dy in directions:
-                        nx, ny = x + dx, y + dy
-                        
-                        if not (0 <= nx < self.world_width and 0 <= ny < self.world_height):
-                            continue
-                        if self.perception.traversability[ny, nx] == TraversabilityLevel.UNTRAVERSIBLE:
-                            continue
-
-                        if self.perception.fire[ny, nx] == FireLevel.SAFE:
-                            predicted_fire[ny, nx] = FireLevel.FLAMMABLE
+        predicted_fire = np.copy(self.perception.fire.matrix)
         
+        random_noise = np.random.rand(self.world_height, self.world_width)
+
+        ignited_mask = (predicted_fire == FireLevel.FLAMMABLE) & (random_noise < self.fire_spread_rate)
+        predicted_fire[ignited_mask] = FireLevel.BURNING
+
+        adjacent_mask = binary_dilation(ignited_mask)
+        safe_mask = predicted_fire == FireLevel.SAFE
+        traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+        exposed_mask = adjacent_mask & safe_mask & traversable_mask
+        predicted_fire[exposed_mask] = FireLevel.FLAMMABLE
+
         return predicted_fire
+    
+    def _predict_fire_spread_horizon(self) -> NDArray:
+        """
+        Predicts the spread of fire over every step until the horizon, since fire spread is atm the same for every branch
+        Does so probabilistically (where random.random() should be seeded), and with an educated guess on spread rate
+
+        Returns:
+        A matrix containing <horizon> sequential fire matrices
+        """
+        # Probabilistically (Randomly (seeded) ignite, educated guess on spread rate)
+        predictions = np.empty((self.horizon, self.world_height, self.world_width))
+        current_fire = np.copy(self.perception.fire.matrix)
+
+        for i in range(self.horizon):
+            random_noise = np.random.rand(self.world_height, self.world_width)
+
+            ignited_mask = (current_fire == FireLevel.FLAMMABLE) & (random_noise < self.fire_spread_rate)
+            current_fire[ignited_mask] = FireLevel.BURNING
+
+            adjacent_mask = binary_dilation(ignited_mask)
+            safe_mask = current_fire == FireLevel.SAFE
+            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+            exposed_mask = adjacent_mask & safe_mask & traversable_mask
+            current_fire[exposed_mask] = FireLevel.FLAMMABLE
+
+            predictions[i] = current_fire
+
+        return predictions
 
     def _is_feasible(self, action: AgentAction) -> bool:
         """
@@ -151,29 +186,6 @@ class MpcAgent(Agent):
             return False
         
         return self.perception.traversability[target_cell_y][target_cell_x] == 0 # Didn't hit wall
-
-
-    def _target_cell(self, action: AgentAction) -> tuple[int, int]:
-        """
-        Calculates the cell targeted by the agent given its action.
-
-        Parameters:
-        action: The action the agent wants to perform
-
-        Returns:
-        The target cell indices
-        """
-        match action:
-            case AgentAction.MOVE_UP:
-                return self.x, self.y - 1
-            case AgentAction.MOVE_DOWN:
-                return self.x, self.y + 1
-            case AgentAction.MOVE_LEFT:
-                return self.x - 1, self.y
-            case AgentAction.MOVE_RIGHT:
-                return self.x + 1, self.y
-        
-        return self.x, self.y # Wait action
     
     def _exploration_score(self) -> float:
         """
@@ -204,13 +216,14 @@ class MpcAgent(Agent):
         """
         # Penalty for being on vulnerable tile
         vulnerability_penalty = self.perception.vulnerability[self.y][self.x]
-        fire_penalty = (
-            2 if self.perception.fire[self.y][self.x] == FireLevel.BURNING else 
-            1 if self.perception.fire[self.y][self.x] == FireLevel.FLAMMABLE else 
-            0
-        )
+        burning_penalty = int(self.perception.fire[self.y][self.x] == FireLevel.BURNING) 
+        flammable_penalty = int(self.perception.fire[self.y][self.x] == FireLevel.FLAMMABLE)
 
-        return (vulnerability_penalty + fire_penalty) / 3
+        w_vuln = 1.0
+        w_burn = 50.0
+        w_flam = 0.2
+
+        return (vulnerability_penalty * w_vuln + burning_penalty * w_burn + flammable_penalty * w_flam) / (w_vuln + w_burn + w_flam)
         
     def _confidence_score(self) -> float:
         """

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-import random
+import numpy as np
 
 from .agent import Agent
 from .constants import RunOutcome
@@ -67,7 +67,7 @@ class Metric:
         self.damage[agent] += 1
 
     def record_vulnerable_collision(self, agent: Agent, vulnerable: float) -> None:
-        rnd = random.random()
+        rnd = np.random.random()
         if (rnd < vulnerable):
             self.damage[agent] += 1
 

@@ -6,6 +6,9 @@ import numpy as np
 
 from numpy.typing import NDArray
 
+from dataclasses import dataclass
+from typing import Self
+
 from tcod.map import compute_fov
 from tcod.libtcodpy import FOV_RESTRICTIVE
 
@@ -15,24 +18,47 @@ LOS_THRESHOLD = 1
 class Agent:
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
                  decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool):
+        # Basic setup
         self.name = name
-        self.perception = State(width, height)
         self.x = x
         self.y = y
-        self.perception.agents[y][x] = 1
         self.world_width = width
         self.world_height = height
+        self.perception = State(width, height)
+        self.perception.agents[y][x] = 1
 
+        # Scan parameters
         self.decay = decay # Certainty decay per time step [0,1]
         self.scan_accuracy = scan_accuracy # Scan accuracy [0,1]
         self.scan_radius = scan_radius # How far the agent can see when it scans
         self.scan_falloff = scan_falloff # Whether scan accuracy should decrease with distance
 
-        self.move_history: list[tuple[int, int]] = [(x, y)] # Maintain a log of what positions the agent has been in for stats
-
+        # Metrics
         self.illegal_moves = 0
+        self.move_history: list[tuple[int, int]] = [(x, y)] # Cells the agent has been to
+        self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has scanned
 
-        self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has ever scanned
+    def copy(self) -> Self:
+        cls = type(self)
+        copy = cls.__new__(cls)
+
+        copy.name = self.name
+        copy.x = self.x
+        copy.y = self.y
+        copy.world_width = self.world_width
+        copy.world_height = self.world_height
+        copy.perception = self.perception.copy()
+
+        copy.decay = self.decay
+        copy.scan_accuracy = self.scan_accuracy
+        copy.scan_radius = self.scan_radius
+        copy.scan_falloff = self.scan_falloff
+
+        copy.illegal_moves = self.illegal_moves
+        copy.move_history = self.move_history.copy()
+        copy.explored = np.copy(self.explored)
+
+        return copy
 
         self.current_task = Task(TaskType.IDLE, x, y)
 
@@ -59,6 +85,28 @@ class Agent:
         conf = self.perception.confidence.matrix[visible]
 
         return Scan(self.name, self.x, self.y, xs, ys, trvs, vuln, vict, agnt, fire, conf)
+    
+    def _target_cell(self, action: AgentAction) -> tuple[int, int]:
+        """
+        Calculates the cell targeted by the agent given its action.
+
+        Parameters:
+        action: The action the agent wants to perform
+
+        Returns:
+        The target cell indices
+        """
+        match action:
+            case AgentAction.MOVE_UP:
+                return self.x, self.y - 1
+            case AgentAction.MOVE_DOWN:
+                return self.x, self.y + 1
+            case AgentAction.MOVE_LEFT:
+                return self.x - 1, self.y
+            case AgentAction.MOVE_RIGHT:
+                return self.x + 1, self.y
+        
+        return self.x, self.y # Wait action
 
     def move_to(self, x: int, y: int) -> None:
         """

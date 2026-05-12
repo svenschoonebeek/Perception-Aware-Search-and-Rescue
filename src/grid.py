@@ -14,3 +14,12 @@ class Grid:
 
     def __delitem__(self, key):
         self.matrix[key] = 0
+
+    def copy(self) -> "Grid":
+        copy = Grid.__new__(Grid)
+
+        copy.height = self.height
+        copy.width = self.width
+        copy.matrix = np.copy(self.matrix)
+
+        return copy

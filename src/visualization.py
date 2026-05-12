@@ -120,6 +120,7 @@ class Visualizer:
 
         # Interactive elements
         self.play_button_rect = pygame.Rect(self.sidebar_x + 60, self.grid_h + 25, 70, 35)
+        self.save_button_rect = pygame.Rect(self.sidebar_x + 45, self.stats_y + self.stats_panel_h + 15, 100, 35)
         self.slider_rect = pygame.Rect(50, self.grid_h + 45, self.grid_w - 100, 8)
         self.is_dragging_slider = False
         self.is_playing = False
@@ -129,6 +130,13 @@ class Visualizer:
         # Assets and pre-rendering
         self.load_assets()
         self.generate_static_background()
+
+    @classmethod
+    def from_file(cls, filepath, max_grid_w=800, max_grid_h=800):
+        import pickle
+        with open(filepath, "rb") as f:
+            history = pickle.load(f)
+        return cls(history, max_grid_w, max_grid_h)
 
     def load_assets(self):
         self.use_sprites = True
@@ -327,6 +335,10 @@ class Visualizer:
         btn_text = self.font.render(lbl, True, COLORS["text"])
         self.screen.blit(btn_text, (self.play_button_rect.centerx - btn_text.get_width()//2, self.play_button_rect.centery - btn_text.get_height()//2))
 
+        pygame.draw.rect(self.screen, COLORS["accent"], self.save_button_rect, border_radius=6)
+        save_txt = self.small_font.render("SAVE TO FILE", True, COLORS["text"])
+        self.screen.blit(save_txt, (self.save_button_rect.centerx - save_txt.get_width()//2, self.save_button_rect.centery - save_txt.get_height()//2))
+
         # Slider
         pygame.draw.rect(self.screen, (60, 60, 70), self.slider_rect, border_radius=4)
         progress = self.current_step / max(1, (len(self.ground_truth) - 1))
@@ -366,6 +378,9 @@ class Visualizer:
                         rel_x = max(0, min(event.pos[0] - self.slider_rect.x, self.slider_rect.width))
                         self.current_step = int((rel_x / self.slider_rect.width) * (len(self.ground_truth) - 1))
 
+                    if self.save_button_rect.collidepoint(event.pos):
+                        self.save_to_file()
+
                 # Unclick events
                 if event.type == pygame.MOUSEBUTTONUP:
                     self.is_dragging_slider = False
@@ -393,3 +408,16 @@ class Visualizer:
             self.render()
             pygame.display.flip()
             clock.tick(60)
+
+    def save_to_file(self):
+        import pickle
+        import os
+        from datetime import datetime
+
+        save_dir = "saved_runs/private"
+        os.makedirs(save_dir, exist_ok=True)
+
+        filename = os.path.join(save_dir, f"sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(self.all_histories[0]) - 1}steps.pkl")
+        with open(filename, "wb") as f:
+            pickle.dump(self.all_histories, f)
+        print(f"Saved to {filename}")

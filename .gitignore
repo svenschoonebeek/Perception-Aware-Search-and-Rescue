@@ -2,3 +2,4 @@ __pycache__
 pytest.ini
 .venv/
 .DS_Store
+saved_runs/private

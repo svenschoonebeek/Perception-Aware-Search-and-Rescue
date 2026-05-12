@@ -1,5 +1,4 @@
 from copy import deepcopy
-import random
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -140,7 +139,7 @@ class Simulator:
                 intents[agent] = (agent.x, agent.y)
                 continue
 
-            tx, ty = self._target_cell(agent, action)
+            tx, ty = agent._target_cell(action)
             if not (0 <= tx < self.width and 0 <= ty < self.height):
                 self.metrics.record_terrain_collision(agent)
                 intents[agent] = (agent.x, agent.y)
@@ -153,29 +152,6 @@ class Simulator:
             else:
                 intents[agent] = (tx, ty)
         return intents
-
-    def _target_cell(self, agent: Agent, action: AgentAction) -> tuple[int, int]:
-        """
-        Calculates the cell targeted by an agent given its action.
-
-        Parameters:
-        agent: The agent to get the target cell for
-        action: The action the agent wants to perform
-
-        Returns:
-        The target cell indices
-        """
-        tx, ty = agent.x, agent.y
-        match action:
-            case AgentAction.MOVE_UP:
-                ty -= 1
-            case AgentAction.MOVE_DOWN:
-                ty += 1
-            case AgentAction.MOVE_LEFT:
-                tx -= 1
-            case AgentAction.MOVE_RIGHT:
-                tx += 1
-        return tx, ty
 
     def _resolve_agent_conflicts(self, intents: dict[Agent, tuple[int, int]]) -> None:
         """
@@ -304,10 +280,9 @@ class Simulator:
             config = MapConfig()
         
         if seed is None:
-            seed = (int) (random.random() * 1_000_000_000)
+            seed = (int) (np.random.random() * 1_000_000_000)
         print(f"Using seed {seed} to generate the map.")
-        random.seed(seed)
-
+        np.random.seed(seed)
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
                                                                                         config.num_rooms, config.unconnected_probability, 
@@ -356,7 +331,7 @@ def _generate_traversability_matrix(
     rooms = []
     tunnels = []
 
-    tunnel_width = random.randint(t_min, t_max)
+    tunnel_width = np.random.randint(t_min, t_max + 1)
     half_tunnel_width = tunnel_width // 2
 
     # create first room in top left corner
@@ -373,16 +348,16 @@ def _generate_traversability_matrix(
 
     # create rooms and store their centers in room_seeds
     for p in range(1, n + 1):
-        c = random.randint(0,x - 1)
-        f = random.randint(0,y - 1)
+        c = np.random.randint(0,x)
+        f = np.random.randint(0,y)
 
         room_seeds[0][p] = c
         room_seeds[1][p] = f
 
-        random_width = random.randint(w_min, w_max)
+        random_width = np.random.randint(w_min, w_max + 1)
         half_random_width = random_width // 2
 
-        random_length = random.randint(l_min, l_max)
+        random_length = np.random.randint(l_min, l_max + 1)
         half_random_length = random_length // 2
 
         x_start = max(0, c - half_random_width)
@@ -399,7 +374,7 @@ def _generate_traversability_matrix(
     
     # connect rooms with tunnels, skipping some based on unconnected_probability
     for q in range(n):
-        connect = random.random() >= u_p
+        connect = np.random.random() >= u_p
 
         if (connect):
             a_x, a_y = room_seeds[0][q], room_seeds[1][q]
@@ -408,7 +383,7 @@ def _generate_traversability_matrix(
             def get_bounds(start, end) -> tuple[int, int]:
                 return (min(start, end), max(start, end) + 1)
             
-            direction = random.randint(0, 1)
+            direction = np.random.randint(0, 2)
             if (direction == 1): # horizontal first, then vertical # TODO probably should also return the tunnels same as with rooms
                 hx_bounds = get_bounds(a_x, b_x)
                 hy_bounds = (max(0, a_y - half_tunnel_width), min(y, a_y + half_tunnel_width + 1))
@@ -463,11 +438,11 @@ def _generate_vulnerability_matrix(
 
     vulnerability = np.full((y, x), VulnerabilityLevel.SAFE)
     for tunnel in tunnels:
-        vulnerable = random.random() <= t_v_p
+        vulnerable = np.random.random() <= t_v_p
         if not (vulnerable):
             continue
         vulnerability_level = VulnerabilityLevel.VULNERABLE
-        if (random.random() <= t_v_s):
+        if (np.random.random() <= t_v_s):
             vulnerability_level = VulnerabilityLevel.HIGH_RISK
         
         hx = tunnel['horizontal_x_range']
@@ -479,11 +454,11 @@ def _generate_vulnerability_matrix(
         vulnerability[vy[0]:vy[1], vx[0]:vx[1]] = vulnerability_level
 
     for room in rooms:
-        vulnerable = random.random() <= r_v_p
+        vulnerable = np.random.random() <= r_v_p
         if not (vulnerable):
             continue
         vulnerability_level = VulnerabilityLevel.VULNERABLE
-        if (random.random() <= r_v_s):
+        if (np.random.random() <= r_v_s):
             vulnerability_level = VulnerabilityLevel.HIGH_RISK
         vulnerability[room['y_range'][0]:room['y_range'][1], room['x_range'][0]:room['x_range'][1]] = vulnerability_level
 
@@ -510,14 +485,14 @@ def _place_agents(
     room_n = len(rooms)
 
     for _ in range(n):
-        random_room = rooms[random.randint(0, room_n - 1)]
+        random_room = rooms[np.random.randint(0, room_n)]
         x_range = random_room['x_range']
         y_range = random_room['y_range']
-        random_x = random.randint(x_range[0], x_range[1] - 1)
-        random_y = random.randint(y_range[0], y_range[1] - 1)
+        random_x = np.random.randint(x_range[0], x_range[1])
+        random_y = np.random.randint(y_range[0], y_range[1])
         while (agents[random_y, random_x] == AgentPresence.PRESENT or victims[random_y, random_x] == VictimPresence.PRESENT):
-            random_x = random.randint(x_range[0], x_range[1] - 1)
-            random_y = random.randint(y_range[0], y_range[1] - 1)
+            random_x = np.random.randint(x_range[0], x_range[1])
+            random_y = np.random.randint(y_range[0], y_range[1])
         agents[random_y, random_x] = AgentPresence.PRESENT
     
     return agents
@@ -541,14 +516,14 @@ def _place_victims(
     room_n = len(rooms)
 
     for _ in range(k):
-        random_room = rooms[random.randint(0, room_n - 1)]
+        random_room = rooms[np.random.randint(0, room_n)]
         x_range = random_room['x_range']
         y_range = random_room['y_range']
-        random_x = random.randint(x_range[0], x_range[1] - 1)
-        random_y = random.randint(y_range[0], y_range[1] - 1)
+        random_x = np.random.randint(x_range[0], x_range[1])
+        random_y = np.random.randint(y_range[0], y_range[1])
         while (victims[random_y, random_x] == VictimPresence.PRESENT or agents[random_y, random_x] == AgentPresence.PRESENT):
-            random_x = random.randint(x_range[0], x_range[1] - 1)
-            random_y = random.randint(y_range[0], y_range[1] - 1)
+            random_x = np.random.randint(x_range[0], x_range[1])
+            random_y = np.random.randint(y_range[0], y_range[1])
         victims[random_y, random_x] = VictimPresence.PRESENT
 
     return victims

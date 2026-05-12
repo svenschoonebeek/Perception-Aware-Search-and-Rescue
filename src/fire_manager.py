@@ -1,5 +1,5 @@
-import random
 import numpy as np
+import random
 
 from .state import State
 from .constants import *
@@ -33,14 +33,14 @@ class FireManager:
         room_n = len(rooms)
 
         for _ in range(n):
-            random_room = rooms[random.randint(0, room_n - 1)]
+            random_room = rooms[np.random.randint(0, room_n)]
             x_range = random_room['x_range']
             y_range = random_room['y_range']
-            random_x = random.randint(x_range[0], x_range[1] - 1)
-            random_y = random.randint(y_range[0], y_range[1] - 1)
+            random_x = np.random.randint(x_range[0], x_range[1])
+            random_y = np.random.randint(y_range[0], y_range[1])
             while (ground_truth.fire[random_y, random_x] == FireLevel.BURNING or ground_truth.victims[random_y, random_x] == VictimPresence.PRESENT):
-                random_x = random.randint(x_range[0], x_range[1] - 1)
-                random_y = random.randint(y_range[0], y_range[1] - 1)
+                random_x = np.random.randint(x_range[0], x_range[1])
+                random_y = np.random.randint(y_range[0], y_range[1])
             ground_truth.fire[random_y, random_x] = FireLevel.BURNING
             self.active_fire_front.add((random_x, random_y, 0))
             self._expose_neighbors(ground_truth, random_x, random_y)
@@ -73,7 +73,7 @@ class FireManager:
                     continue
 
                 if (ground_truth.fire[new_y][new_x] == FireLevel.FLAMMABLE):
-                    if (random.random() <= self.spread_rate):
+                    if (np.random.random() <= self.spread_rate):
                         ground_truth.fire[new_y][new_x] = FireLevel.BURNING
                         newly_ignited.add((new_x, new_y, 0))
             if (duration < self.fire_duration or self.fire_duration == -1):
