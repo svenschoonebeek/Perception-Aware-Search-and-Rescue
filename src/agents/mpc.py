@@ -1,12 +1,13 @@
 import numpy as np
 from numpy.typing import NDArray
-
+import logging
 from typing import Self
-
 from scipy.ndimage import binary_dilation
 
 from src.agent import Agent, AgentAction
 from src.constants import FireLevel, TraversabilityLevel
+
+logger = logging.getLogger(__name__)
 
 class MpcAgent(Agent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
@@ -74,7 +75,7 @@ class MpcAgent(Agent):
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
 
-        # print("Exploration:", exploration, "Safety:", safety, "Confidence:", confidence)
+        logger.debug("Exploration: %f, Safety: %f, Confidence: %f", exploration, safety, confidence)
 
         return exploration + safety + confidence
 

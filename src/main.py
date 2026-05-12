@@ -1,3 +1,6 @@
+import logging
+import argparse
+
 from .simulator import Simulator, MapConfig, visualize_grid_gen
 from .agents.mpc import MpcAgent
 from .agents.task_mpc import TaskMpcAgent
@@ -9,7 +12,23 @@ from .supervisor import Supervisor
 WIDTH = 40
 HEIGHT = 40
 
+logger = logging.getLogger(__name__)
+
+def setup_logging(is_debug: bool):
+    """Configures the global logging level and format."""
+    log_level = logging.DEBUG if is_debug else logging.INFO
+
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s - %(message)s',
+    )
+
 def main():
+    parser = argparse.ArgumentParser(description="Run the search and rescue simulation.")
+    parser.add_argument('--debug', action='store_true', help="Enable debug logging")
+    args = parser.parse_args()
+    setup_logging(args.debug)
+
     sim = Simulator(WIDTH, HEIGHT)
     config = MapConfig(num_rooms=5, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=4, min_tunnel_thickness=2
                        , initial_fire_points=0)
@@ -33,10 +52,10 @@ def main():
     #                    sim.ground_truth.victims, sim.ground_truth.vulnerability,
     #                    sim.ground_truth.fire)
 
-    print("Running Simulation steps...")
+    logger.info("Running Simulation steps...")
     history = sim.run(100) 
 
-    print("Launching Visualizer...")
+    logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)
     viz.run()
 

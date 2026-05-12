@@ -1,4 +1,5 @@
 from copy import deepcopy
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -11,6 +12,8 @@ from .fire_manager import FireManager
 from .constants import *
 from .metric import Metric
 from .supervisor import Supervisor
+
+logger = logging.getLogger(__name__)
 
 class Simulator:
     def __init__(self, width: int, height: int):
@@ -114,7 +117,7 @@ class Simulator:
 
         for _ in range(steps):
             # Record steps
-            print("Step", _, "=========================")
+            logger.info("Step %d =========================", _)
             step_result = self.step()
             for i in range(len(step_result)):
                 record[i].append(step_result[i])
@@ -284,7 +287,7 @@ class Simulator:
         
         if seed is None:
             seed = (int) (np.random.random() * 1_000_000_000)
-        print(f"Using seed {seed} to generate the map.")
+        logger.info(f"Using seed {seed} to generate the map.")
         np.random.seed(seed)
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 

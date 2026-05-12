@@ -1,6 +1,6 @@
 import pygame
 import sys
-
+import logging
 from .constants import *
 
 COLORS = {
@@ -21,6 +21,8 @@ COLORS = {
     "flammable": (255, 200, 0),
     "burnt": (80, 80, 80),
 }
+
+logger = logging.getLogger(__name__)
 
 class Checkbox:
     def __init__(self, x, y, label, default=True):
@@ -147,7 +149,7 @@ class Visualizer:
             self.victim_sprite = pygame.image.load("assets/victim_bloody.png").convert_alpha()
             self.victim_sprite = pygame.transform.scale(self.victim_sprite, (self.cell_size, self.cell_size))
         except:
-            print("Sprites not found in assets folder, falling back to shapes.")
+            logger.warning("Sprites not found in assets folder, falling back to shapes.")
             self.use_sprites = False
         
         self.fire_burning_surf = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
@@ -420,4 +422,4 @@ class Visualizer:
         filename = os.path.join(save_dir, f"sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(self.all_histories[0]) - 1}steps.pkl")
         with open(filename, "wb") as f:
             pickle.dump(self.all_histories, f)
-        print(f"Saved to {filename}")
+        logger.info(f"Saved to {filename}")
