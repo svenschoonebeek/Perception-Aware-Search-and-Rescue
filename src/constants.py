@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any
 from numpy.typing import NDArray
@@ -48,7 +48,7 @@ class EventPriority(IntEnum): # TODO to be extended with possible future events
 class InterventionEvent:
     priority: EventPriority
     description: str
-    data: dict[str, Any] = None # Hold context
+    data: dict[str, Any] = field(default_factory=dict)
     
 class TaskType(Enum):
     IDLE = "idle"

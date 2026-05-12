@@ -198,7 +198,7 @@ class MpcAgent(Agent):
         unexplored = np.argwhere(self.explored == False)
     
         if len(unexplored) == 0:
-            return explored / (self.world_height * self.world_width)
+            return float(explored) / (self.world_height * self.world_width)
         
         # Heading towards unexplored tiles is more important
         distances = np.linalg.norm(unexplored - np.array([self.y, self.x]), axis=1)

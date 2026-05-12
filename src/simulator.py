@@ -18,9 +18,9 @@ class Simulator:
         self.height = height
         self.agents: list[Agent] = []
         self.ground_truth = State(width, height)
-        self.fire_manager: FireManager = None
+        self.fire_manager: FireManager | None = None
         self.metrics = Metric()
-        self.supervisor: Supervisor = None
+        self.supervisor: Supervisor | None = None
 
     def set_supervisor(self, supervisor: Supervisor) -> None:
         self.supervisor = supervisor
@@ -54,6 +54,7 @@ class Simulator:
             self.metrics.record_snapshot()  # capture initial metric state
 
         intents = self._collect_intents()
+        print(f"Intents: {{ {', '.join(f'{agent.name}: {intents[agent]}' for agent in self.agents)} }}")
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
         self._apply_vulnerability_damage()
@@ -62,6 +63,8 @@ class Simulator:
         agent_scans: list[Scan] = []
         for agent in self.agents:
             agent_scans.append(agent.scan(self.ground_truth))
+            agent.check_task_status()
+            print(f"{agent.name}: ({agent.x}, {agent.y}) with task {agent.current_task.task_type}")
         
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
@@ -297,7 +300,8 @@ class Simulator:
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
 
         self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration))
-        self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
+        if self.fire_manager is not None:
+            self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
 
         self.ground_truth.confidence.matrix = np.ones((self.height, self.width))
         return
@@ -545,7 +549,7 @@ def visualize_grid_gen(traversability: Grid, agents: Grid, victims: Grid, vulner
 
     vulnerability_mask = np.where(vulnerability.matrix > VulnerabilityLevel.SAFE.value, vulnerability.matrix, np.nan)
     plt.imshow(vulnerability_mask, cmap='autumn_r', interpolation='nearest', alpha=0.3, vmin=0.5, vmax=1)
-    vuln_cmap = plt.cm.autumn_r
+    vuln_cmap = plt.get_cmap('autumn_r')
     
     flammable_mask = np.where(fire.matrix == FireLevel.FLAMMABLE.value, 1, np.nan)
     burning_mask = np.where(fire.matrix == FireLevel.BURNING.value, 1, np.nan)

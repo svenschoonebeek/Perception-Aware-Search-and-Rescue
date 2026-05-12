@@ -1,7 +1,9 @@
+from collections import deque
+
 import numpy as np
 
 from .state import State
-from .constants import AgentAction, Scan, Task, TaskType
+from .constants import AgentAction, FireLevel, Scan, Task, TaskType, TraversabilityLevel
 import numpy as np
 
 from numpy.typing import NDArray
@@ -37,7 +39,11 @@ class Agent:
         self.illegal_moves = 0
         self.move_history: list[tuple[int, int]] = [(x, y)] # Cells the agent has been to
         self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has scanned
-
+        
+        # Task info
+        self.current_task = Task(TaskType.IDLE, -1, -1)
+        self.current_path: list[tuple[int, int]] = []
+    
     def copy(self) -> Self:
         cls = type(self)
         copy = cls.__new__(cls)
@@ -58,9 +64,8 @@ class Agent:
         copy.move_history = self.move_history.copy()
         copy.explored = np.copy(self.explored)
 
+        copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
         return copy
-
-        self.current_task = Task(TaskType.IDLE, x, y)
 
     def scan(self, state: State) -> Scan:
         """
@@ -126,6 +131,71 @@ class Agent:
         """
         return AgentAction.MOVE_RIGHT
 
+    def check_task_status(self) -> None:
+        """
+        Checks whether the current task is completed, and if so, switches to idle
+        """
+        if self.current_task.task_type == TaskType.IDLE:
+            return
+        
+        target_pos = (self.current_task.x, self.current_task.y)
+        if self.current_task.task_type == TaskType.EXPLORE:
+            if (self.x, self.y) == (self.current_task.x, self.current_task.y):
+                self._return_to_idle()
+    
+    def _calculate_path(self, target_x: int, target_y: int) -> list[tuple[int, int]]:
+        """
+        Calculates a path from the agent's current position to the target using BFS.
+        Returns a list of (x, y) coordinates representing the path.
+        """
+        start = (self.x, self.y)
+        target = (target_x, target_y)
+        
+        if start == target:
+            return [start]
+            
+        queue = deque([[start]])
+        seen = set([start])
+        
+        while queue:
+            path = queue.popleft()
+            x, y = path[-1]
+            
+            if (x, y) == target:
+                return path
+                
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                
+                if 0 <= nx < self.world_width and 0 <= ny < self.world_height:
+                    if (nx, ny) not in seen:
+                        if self.perception.traversability[ny][nx] != TraversabilityLevel.UNTRAVERSIBLE:
+                            seen.add((nx, ny))
+                            queue.append(path + [(nx, ny)])
+                            
+        return []
+    
+    def _is_path_blocked(self) -> bool:
+        """
+        Checks if the currently planned path contains any newly discovered walls or fires.
+        """
+        for x, y in self.current_path:
+            # Did we just discover a wall here?
+            if self.perception.traversability[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                return True
+            #? should count fire as blocking? I don't think so
+            # if self.perception.fire[y][x] == FireLevel.BURNING:
+            #     return True
+                
+        return False
+    
+    def _return_to_idle(self) -> None:
+        """
+        Helper function to return to idle state after completing a task
+        """
+        self.current_task = Task(TaskType.IDLE, -1, -1)
+        self.current_path = []
+    
     def _tiles_in_radius(self) -> NDArray[np.bool]:
         """
         Returns a mask of all tiles within scan_radius of the agent

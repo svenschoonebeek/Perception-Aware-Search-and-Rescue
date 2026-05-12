@@ -1,3 +1,5 @@
+from typing import cast
+
 import numpy as np
 
 from .agent import Agent
@@ -11,10 +13,12 @@ class Supervisor:
         self.active_tasks = []
 
         self.decay = decay # Certainty decay per time step [0,1]
-        self.event_queue: list[EventPriority] = [] # A queue of events reported by agents that the supervisor can respond to
+        self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
 
         self.agent_scan_radius = 3 # how far agents can scan, used for conflict checking
         self.agent_tracker = dict[str, tuple[int, int]]()
+
+        self.spatial_conflict_cooldown = 3
 
     def requires_intervention(self) -> bool:
         """
@@ -22,7 +26,7 @@ class Supervisor:
         """
         return len(self.event_queue) > 0
     
-    def trigger_event(self, event: EventPriority) -> None:
+    def trigger_event(self, event: InterventionEvent) -> None:
         """
         Adds an event to the queue to be processed by the supervisor
         """
@@ -50,6 +54,10 @@ class Supervisor:
         """
         Checks for conflicts between active tasks and locations of agents
         """
+        if (self.spatial_conflict_cooldown > 0):
+            self.spatial_conflict_cooldown -= 1
+            return
+        
         if len(self.agent_tracker) < 2:
             return
         
@@ -73,6 +81,7 @@ class Supervisor:
                         description=f"Spatial Conflict Detected between {names[i]} and {names[j]}! Distance: {distance:.1f}",
                         data={"agents": (names[i], names[j])}
                     ))
+                    self.spatial_conflict_cooldown = 5
                     # TODO change this such that it doesn't return instantly, we want auction between all conflicting agents not just first pair
                     return
 
@@ -86,10 +95,9 @@ class Supervisor:
         while self.event_queue:
             event = self.event_queue.pop(0)
             if event.priority == EventPriority.SPATIAL_CONFLICT:
-                # TODO assign new exploration tasks to conflicting agents to resolve conflict
                 conflicting_agent_names = event.data["agents"]
                 conflicting_agents = [a for a in agents if a.name in conflicting_agent_names]
-                self._run_frontier_auction(conflicting_agents)
+                self._run_burgard_frontier_auction(conflicting_agents)
 
         
     def _extract_frontiers(self) -> list[tuple[int, int]]:
@@ -122,19 +130,74 @@ class Supervisor:
         frontier_mask = candidate_mask & borders_unknown
 
         # clustering for frontier reduction
-        labeled_mask, num_regions = label(frontier_mask)
-        region_centroids = []
+        structure = np.ones((3, 3), dtype=int)
+        labeled_mask, num_regions_raw = cast(
+            tuple[np.ndarray, float],
+            label(frontier_mask, structure=structure)
+            )
+
+        num_regions = int(num_regions_raw)
+        region_centroids: list[tuple[int, int]] = []
+
         for i in range(1, num_regions + 1):
-            cy, cx = center_of_mass(frontier_mask, labeled_mask, i)
+            mass_center = cast(tuple[float, float], center_of_mass(frontier_mask, labeled_mask, i))
+            cy, cx = mass_center
             region_centroids.append((int(cx), int(cy)))
 
         return region_centroids
         
-    def _run_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
+    def _run_burgard_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
         """
-        Runs a frontier auction to assign new exploration tasks to the conflicting agents
+        Runs a Burgard-style frontier auction to assign new exploration tasks to the conflicting agents
         """
         frontiers = self._extract_frontiers()
+        print(f"Extracted frontiers: {frontiers}")
+        if not frontiers:
+            return
+        
+        unassigned_frontiers = list(frontiers)
+        available_agents = list(conflicting_agents)
+
+        claimed_targets = []
+
+        while available_agents and unassigned_frontiers:
+            best_frontier = None
+            winning_agent = None
+            lowest_total_cost = float('inf')
+
+            for f in unassigned_frontiers:
+                burgard_penalty = 0.0
+                for claimed_f in claimed_targets:
+                    distance = np.sqrt((f[0] - claimed_f[0])**2 + (f[1] - claimed_f[1])**2)
+                    burgard_penalty += 500.0 * np.exp(-distance) # spatial exclusivity penalty
+
+                for agent in available_agents:
+                    travel_cost = np.sqrt((agent.x - f[0])**2 + (agent.y - f[1])**2)
+                    total_cost = travel_cost + burgard_penalty
+
+                    if total_cost < lowest_total_cost:
+                        lowest_total_cost = total_cost
+                        best_frontier = f
+                        winning_agent = agent
+                
+            if not best_frontier or not winning_agent:
+                break
+            
+            bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
+            winning_agent.current_task = bound_task
+            winning_agent.current_path = []  # force path recalculation toward new frontier
+
+            print(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
+            claimed_targets.append(best_frontier)
+            unassigned_frontiers.remove(best_frontier)
+            available_agents.remove(winning_agent)
+
+    def _run_LCB_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
+        """
+        Runs a frontier auction using Least Contested Bid to assign new exploration tasks to the conflicting agents
+        """
+        frontiers = self._extract_frontiers()
+        print(f"Extracted frontiers: {frontiers}")
         if not frontiers:
             return
         
@@ -179,8 +242,11 @@ class Supervisor:
                     best_frontier = f
                     winning_agent = best_agent_f
 
+            if not winning_agent or not best_frontier:
+                break
             bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
             winning_agent.current_task = bound_task
+            winning_agent.current_path = []  # force path recalculation toward new frontier
 
             print(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
             unassigned_frontiers.remove(best_frontier)
