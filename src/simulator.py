@@ -70,7 +70,7 @@ class Simulator:
             self.supervisor.check_for_victims()
 
             if self.supervisor.requires_intervention():
-                self.supervisor.assign_tasks()
+                self.supervisor.resolve_events(self.agents)
 
         # Perform environment actions (firespread, etc.)
         if self.fire_manager is not None:

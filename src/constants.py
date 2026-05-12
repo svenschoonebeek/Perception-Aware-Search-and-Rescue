@@ -42,7 +42,7 @@ class EventPriority(IntEnum): # TODO to be extended with possible future events
     """Lower number = Higher Priority"""
     CRITICAL_VICTIM_FOUND = 1
     SPATIAL_CONFLICT = 2
-    # PATH_BLOCKED = 4
+    PATH_BLOCKED = 3 # this might need to be able to overwrite other events, as it can be a consequence of other events
 
 @dataclass
 class InterventionEvent:
@@ -50,63 +50,16 @@ class InterventionEvent:
     description: str
     data: dict[str, Any] = None # Hold context
     
-@dataclass
-class BaseCommand:
-    target_x: int
-    target_y: int
-
-@dataclass
-class RescueCommand(BaseCommand): #TODO current variables are just placeholders, need to be defined properly after we have a better idea of the MPC implementation
-    urgency_weight: float = 2.0
-    target_tolerance: int = 0
-
-@dataclass
-class ExploreCommand(BaseCommand): #TODO same as above
-    coverage_radius: int = 3
-    avoid_fire_weight: float = 5.0
-
 class TaskType(Enum):
+    IDLE = "idle"
     RESCUE = "rescue"
     EXPLORE = "explore"
     
 @dataclass
 class Task:
-    task_id: int
+    task_type: TaskType
     x: int
     y: int
-    task_type: TaskType
-    task_reward: int
-
-    def generate_command(self) -> BaseCommand:
-        """
-        Translates task into command to send to MPC agent.
-        """
-        if self.task_type == TaskType.RESCUE:
-            # dynamically set command parameters based on the task's reward/priority
-            urgency = 2.0 if self.task_reward > 50 else 1.0
-            return RescueCommand(
-                target_x=self.x, 
-                target_y=self.y, 
-                urgency_weight=urgency
-            )
-            
-        elif self.task_type == TaskType.EXPLORE:
-            return ExploreCommand(
-                target_x=self.x, 
-                target_y=self.y
-            )
-            
-        else:
-            raise ValueError(f"Unsupported TaskType: {self.task_type}")
-
-# @dataclass
-# class AgentTelemetry:
-#     agent_id: int
-#     current_x: float
-#     current_y: float
-#     current_status: str
-#     cost_to_go: float   # The MPC's mathematical estimate 
-#     local_discoveries: list
 
 @dataclass
 class Scan:

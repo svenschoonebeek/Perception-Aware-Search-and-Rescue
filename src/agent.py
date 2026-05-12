@@ -1,7 +1,7 @@
 import numpy as np
 
 from .state import State
-from .constants import AgentAction, Scan
+from .constants import AgentAction, Scan, Task, TaskType
 import numpy as np
 
 from numpy.typing import NDArray
@@ -33,6 +33,8 @@ class Agent:
         self.illegal_moves = 0
 
         self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has ever scanned
+
+        self.current_task = Task(TaskType.IDLE, x, y)
 
     def scan(self, state: State) -> Scan:
         """

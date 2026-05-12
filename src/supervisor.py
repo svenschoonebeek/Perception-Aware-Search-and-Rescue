@@ -3,6 +3,7 @@ import numpy as np
 from .agent import Agent
 from .state import State
 from .constants import *
+from scipy.ndimage import label, center_of_mass
 
 class Supervisor:
     def __init__(self, width: int, height: int, decay: float):
@@ -26,7 +27,7 @@ class Supervisor:
         Adds an event to the queue to be processed by the supervisor
         """
         self.event_queue.append(event)
-        self.event_queue.sort(key=lambda e: e.value)
+        self.event_queue.sort(key=lambda e: e.priority)
     
     def update_belief(self, agent_scans: list[Scan]) -> None:
         """
@@ -72,13 +73,118 @@ class Supervisor:
                         description=f"Spatial Conflict Detected between {names[i]} and {names[j]}! Distance: {distance:.1f}",
                         data={"agents": (names[i], names[j])}
                     ))
+                    # TODO change this such that it doesn't return instantly, we want auction between all conflicting agents not just first pair
                     return
 
     def check_for_victims(self) -> None:
         pass
 
-    def assign_tasks(self, agents: list[Agent]) -> None:
+    def resolve_events(self, agents: list[Agent]) -> None:
         """
-        Assigns tasks to agents based on the shared belief and active tasks
+        Assigns tasks to agents based on the events in the queue, and the current shared belief state
         """
-        pass
+        while self.event_queue:
+            event = self.event_queue.pop(0)
+            if event.priority == EventPriority.SPATIAL_CONFLICT:
+                # TODO assign new exploration tasks to conflicting agents to resolve conflict
+                conflicting_agent_names = event.data["agents"]
+                conflicting_agents = [a for a in agents if a.name in conflicting_agent_names]
+                self._run_frontier_auction(conflicting_agents)
+
+        
+    def _extract_frontiers(self) -> list[tuple[int, int]]:
+        """
+        Extracts frontier cells from the shared belief state for task assignment
+
+        Returns:
+        A list of (x, y) tuples representing frontier cell coordinates
+        """
+        
+        conf_matrix = self.shared_belief.confidence.matrix
+        trvs_matrix = self.shared_belief.traversability.matrix
+
+        unknown_mask = conf_matrix == 0
+        candidate_mask = (conf_matrix > 0) & (trvs_matrix == TraversabilityLevel.TRAVERSIBLE)
+
+        up_unknown = np.roll(unknown_mask, shift=-1, axis=0)
+        up_unknown[-1, :] = False
+
+        down_unknown = np.roll(unknown_mask, shift=1, axis=0)
+        down_unknown[0, :] = False
+
+        left_unknown = np.roll(unknown_mask, shift=-1, axis=1)
+        left_unknown[:, -1] = False
+
+        right_unknown = np.roll(unknown_mask, shift=1, axis=1)
+        right_unknown[:, 0] = False
+
+        borders_unknown = up_unknown | down_unknown | left_unknown | right_unknown
+        frontier_mask = candidate_mask & borders_unknown
+
+        # clustering for frontier reduction
+        labeled_mask, num_regions = label(frontier_mask)
+        region_centroids = []
+        for i in range(1, num_regions + 1):
+            cy, cx = center_of_mass(frontier_mask, labeled_mask, i)
+            region_centroids.append((int(cx), int(cy)))
+
+        return region_centroids
+        
+    def _run_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
+        """
+        Runs a frontier auction to assign new exploration tasks to the conflicting agents
+        """
+        frontiers = self._extract_frontiers()
+        if not frontiers:
+            return
+        
+        unassigned_frontiers = list(frontiers)
+        available_agents = list(conflicting_agents)
+
+        while unassigned_frontiers and available_agents:
+            bids = {f: [] for f in unassigned_frontiers}
+
+            for f in unassigned_frontiers:
+                for agent in available_agents:
+                    travel_cost = np.sqrt((agent.x - f[0])**2 + (agent.y - f[1])**2)
+                    # TODO add burgard spatial penalty
+                    bids[f].append((travel_cost, agent))
+
+            best_frontier = None
+            winning_agent = None
+            max_contest_diff =  -float('inf')
+            lowest_tiebreaker_bid = float('inf')
+
+            # evaluate LCB
+            for f, agent_bids in bids.items():
+                agent_bids.sort(key=lambda x: x[0])
+                lowest_bid, best_agent_f = agent_bids[0]
+
+                #spatial exclusivity:
+                if len(agent_bids) > 1:
+                    second_lowest_bid = agent_bids[1][0]
+                    contest_diff = second_lowest_bid - lowest_bid
+                else:
+                    contest_diff = float('inf')
+                
+                if (contest_diff > max_contest_diff):
+                    max_contest_diff = contest_diff
+                    lowest_tiebreaker_bid = lowest_bid
+                    best_frontier = f
+                    winning_agent = best_agent_f
+
+                # tiebreaker
+                elif (contest_diff == max_contest_diff) and (lowest_bid < lowest_tiebreaker_bid):
+                    lowest_tiebreaker_bid = lowest_bid
+                    best_frontier = f
+                    winning_agent = best_agent_f
+
+            bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
+            winning_agent.current_task = bound_task
+
+            print(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
+            unassigned_frontiers.remove(best_frontier)
+            available_agents.remove(winning_agent)
+        
+
+
