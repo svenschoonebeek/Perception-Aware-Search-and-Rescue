@@ -128,6 +128,7 @@ class Visualizer:
         self.is_playing = False
         self.play_speed = 100 
         self.last_update_time = pygame.time.get_ticks()
+        self.hovered_cell: tuple[int, int] | None = None
 
         # Assets and pre-rendering
         self.load_assets()
@@ -341,6 +342,12 @@ class Visualizer:
         save_txt = self.small_font.render("SAVE TO FILE", True, COLORS["text"])
         self.screen.blit(save_txt, (self.save_button_rect.centerx - save_txt.get_width()//2, self.save_button_rect.centery - save_txt.get_height()//2))
 
+        # Hovered tile coordinate
+        if self.hovered_cell is not None:
+            hx, hy = self.hovered_cell
+            coord_txt = self.font.render(f"({hx}, {hy})", True, COLORS["text"])
+            self.screen.blit(coord_txt, (10, self.grid_h + 25))
+
         # Slider
         pygame.draw.rect(self.screen, (60, 60, 70), self.slider_rect, border_radius=4)
         progress = self.current_step / max(1, (len(self.ground_truth) - 1))
@@ -388,6 +395,13 @@ class Visualizer:
                     self.is_dragging_slider = False
 
                 # Slider events
+                if event.type == pygame.MOUSEMOTION or event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = pygame.mouse.get_pos()
+                    if 0 <= mx < self.grid_w and 0 <= my < self.grid_h:
+                        self.hovered_cell = (mx // self.cell_size, my // self.cell_size)
+                    else:
+                        self.hovered_cell = None
+
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RIGHT:
                           self.current_step = min(self.current_step + 1, len(self.ground_truth) - 1)

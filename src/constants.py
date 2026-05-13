@@ -41,8 +41,10 @@ class VictimPresence(IntEnum):
 class EventPriority(IntEnum): # TODO to be extended with possible future events
     """Lower number = Higher Priority"""
     CRITICAL_VICTIM_FOUND = 1
-    SPATIAL_CONFLICT = 2
-    PATH_BLOCKED = 3 # this might need to be able to overwrite other events, as it can be a consequence of other events
+    PATH_BLOCKED = 2
+    SPATIAL_CONFLICT = 3
+    LOW_PROGRESS = 4
+    TASK_COMPLETED = 5
 
 @dataclass
 class InterventionEvent:
@@ -60,6 +62,12 @@ class Task:
     task_type: TaskType
     x: int
     y: int
+
+@dataclass
+class AgentInfo:
+    x: int 
+    y: int
+    task: Task
 
 @dataclass
 class Scan:

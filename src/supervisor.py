@@ -1,4 +1,6 @@
-from typing import cast
+from __future__ import annotations
+from collections import deque
+from typing import TYPE_CHECKING, cast
 import numpy as np
 import logging
 
@@ -8,10 +10,15 @@ from .constants import *
 from scipy.ndimage import binary_dilation, label, center_of_mass
 from scipy.spatial.distance import cdist
 
+if TYPE_CHECKING:
+    from src.agent import Agent
+
 logger = logging.getLogger(__name__)
 
 class Supervisor:
     def __init__(self, width: int, height: int, decay: float):
+        self.width = width
+        self.height = height
         self.shared_belief = State(width, height)
         self.shared_belief.traversability.matrix = np.full((height, width), TraversabilityLevel.TRAVERSABLE)
         self.global_explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the supervisor has received information about
@@ -20,9 +27,10 @@ class Supervisor:
         self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
 
         self.agent_scan_radius = 3 # how far agents can scan, used for conflict checking
-        self.agent_tracker = dict[str, tuple[int, int]]()
+        self.agent_tracker: dict[str, AgentInfo] = {} # tracks the last known position and task of each agent, for conflict checking
 
         self.spatial_conflict_cooldown = 3
+
 
     def requires_intervention(self) -> bool:
         """
@@ -44,8 +52,13 @@ class Supervisor:
         self.shared_belief.confidence.matrix = np.maximum(self.shared_belief.confidence.matrix - self.decay, 0) # vectorized confidence decay
 
         for scan in agent_scans:
-            self.agent_tracker[scan.agent_name] = (scan.agent_x, scan.agent_y)
-            self.global_explored[scan.xs, scan.ys] = True
+            if scan.agent_name not in self.agent_tracker:
+                self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE, -1, -1))
+            else:
+                self.agent_tracker[scan.agent_name].x = scan.agent_x
+                self.agent_tracker[scan.agent_name].y = scan.agent_y
+
+            self.global_explored[scan.ys, scan.xs] = True
 
             for x, y, trvs, vuln, vict, agnt, fire, conf in zip(scan.xs, scan.ys, scan.traversability, scan.vulnerability, scan.victims, scan.agents, scan.fire, scan.confidence):
                 if (conf > self.shared_belief.confidence.matrix[y][x]):
@@ -68,17 +81,17 @@ class Supervisor:
             return
         
         names = list(self.agent_tracker.keys())
-        positions = list(self.agent_tracker.values())
+        information = list(self.agent_tracker.values())
         
         conflict_distance_threshold = self.agent_scan_radius * 1.5 
 
         conflicting_agent_names = set()
 
         # Check pairwise distances between agents 
-        for i in range(len(positions)):
-            for j in range(i + 1, len(positions)):
-                x1, y1 = positions[i]
-                x2, y2 = positions[j]
+        for i in range(len(information)):
+            for j in range(i + 1, len(information)):
+                x1, y1 = information[i].x, information[i].y
+                x2, y2 = information[j].x, information[j].y
                 
                 distance = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
                 
@@ -98,6 +111,9 @@ class Supervisor:
         
         self.spatial_conflict_cooldown = 3
 
+    def check_for_global_impatience(self) -> None:
+        pass
+
     def check_for_victims(self) -> None:
         pass
 
@@ -111,7 +127,11 @@ class Supervisor:
                 conflicting_agent_names = event.data["agents"]
                 conflicting_agents = [a for a in agents if a.name in conflicting_agent_names]
                 self._run_burgard_frontier_auction(conflicting_agents)
-
+            
+            elif event.priority == EventPriority.TASK_COMPLETED: # update agent tracker to set completed task to idle
+                completed_agent_name = event.data["agent"]
+                logger.debug(f"Agent {completed_agent_name} completed a task")
+                self.agent_tracker[completed_agent_name].task = Task(TaskType.IDLE, -1, -1)
 
     def _extract_frontiers(self) -> list:
         explored = np.array(self.global_explored, dtype=bool)
@@ -126,10 +146,10 @@ class Supervisor:
         
         frontier_mask = explored & traversable & adjacent_to_unexplored
         
-        # grouping_structure = np.ones((3, 3), dtype=int)
+        grouping_structure = np.ones((3, 3), dtype=int)
         labeled_mask, num_regions_raw = cast(
             tuple[np.ndarray, int],
-            label(frontier_mask, structure=cross_structure)
+            label(frontier_mask, structure=grouping_structure)
             )
         
         centroids = []
@@ -146,10 +166,12 @@ class Supervisor:
             closest_idx = np.argmin(distances)
             best_coord = coords[closest_idx]
             
-            centroids.append(tuple(best_coord))
-            
+            centroids.append((int(best_coord[1]), int(best_coord[0])))  # return (x, y) = (col, row)
+
+            # self._visualize_frontiers(frontier_mask, centroids)
+
         return centroids
-        
+
     def _run_burgard_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
         """
         Runs a Burgard-style frontier auction to assign new exploration tasks to the conflicting agents
@@ -161,8 +183,18 @@ class Supervisor:
         
         unassigned_frontiers = list(frontiers)
         available_agents = list(conflicting_agents)
-
         claimed_targets = []
+
+        bidding_agent_names = {agent.name for agent in conflicting_agents}
+
+        # Keep only agents whose names are not in bidding set
+        other_agent_info = {
+            name: info for name, info in self.agent_tracker.items() 
+            if name not in bidding_agent_names
+        }
+
+        # weights for burgards spatial exclusivity, being assigned close to an existing target and close to an idle agent, respectively
+        w_spatial_claimed, w_close_to_target, w_close_to_agent = 500.0, 300.0, 150.0
 
         while available_agents and unassigned_frontiers:
             best_frontier = None
@@ -173,8 +205,18 @@ class Supervisor:
                 burgard_penalty = 0.0
                 for claimed_f in claimed_targets:
                     distance = np.sqrt((f[0] - claimed_f[0])**2 + (f[1] - claimed_f[1])**2)
-                    burgard_penalty += 500.0 * np.exp(-distance) # spatial exclusivity penalty
-
+                    burgard_penalty += w_spatial_claimed * np.exp(-distance) # spatial exclusivity penalty
+                
+                for agent_info in other_agent_info.values():
+                    if agent_info.task.task_type == TaskType.EXPLORE:
+                        task_location = (agent_info.task.x, agent_info.task.y)
+                        distance_to_task = np.sqrt((f[0] - task_location[0])**2 + (f[1] - task_location[1])**2)
+                        burgard_penalty += w_close_to_target * np.exp(-distance_to_task) # penalize frontiers close to other agents' current tasks
+                    
+                    elif agent_info.task.task_type == TaskType.IDLE:
+                        physical_dist = np.sqrt((f[0] - agent_info.x)**2 + (f[1] - agent_info.y)**2)
+                        burgard_penalty += w_close_to_agent * np.exp(-physical_dist)
+        
                 for agent in available_agents:
                     travel_cost = np.sqrt((agent.x - f[0])**2 + (agent.y - f[1])**2)
                     total_cost = travel_cost + burgard_penalty
@@ -189,72 +231,65 @@ class Supervisor:
             
             bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
             winning_agent.set_current_task(bound_task)
-            winning_agent.set_current_path([])  # force path recalculation toward new frontier
+            winning_agent.set_current_path(self._calculate_path(winning_agent.x, winning_agent.y, best_frontier[0], best_frontier[1]))
 
+            self.agent_tracker[winning_agent.name].task = bound_task
             logger.debug(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
             claimed_targets.append(best_frontier)
             unassigned_frontiers.remove(best_frontier)
             available_agents.remove(winning_agent)
-
-    def _run_LCB_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
-        """
-        Runs a frontier auction using Least Contested Bid to assign new exploration tasks to the conflicting agents
-        """
-        frontiers = self._extract_frontiers()
-        logger.debug(f"Extracted frontiers: {frontiers}")
-        if not frontiers:
-            return
         
-        unassigned_frontiers = list(frontiers)
-        available_agents = list(conflicting_agents)
+        for agent in available_agents:
+            logger.debug(f"No frontiers left to assign, setting agent {agent.name} to idle")
+            agent.set_current_task(Task(TaskType.IDLE, -1, -1))
+            agent.set_current_path([])
+    
 
-        while unassigned_frontiers and available_agents:
-            bids = {f: [] for f in unassigned_frontiers}
-
-            for f in unassigned_frontiers:
-                for agent in available_agents:
-                    travel_cost = np.sqrt((agent.x - f[0])**2 + (agent.y - f[1])**2)
-                    # TODO add burgard spatial penalty
-                    bids[f].append((travel_cost, agent))
-
-            best_frontier = None
-            winning_agent = None
-            max_contest_diff =  -float('inf')
-            lowest_tiebreaker_bid = float('inf')
-
-            # evaluate LCB
-            for f, agent_bids in bids.items():
-                agent_bids.sort(key=lambda x: x[0])
-                lowest_bid, best_agent_f = agent_bids[0]
-
-                #spatial exclusivity:
-                if len(agent_bids) > 1:
-                    second_lowest_bid = agent_bids[1][0]
-                    contest_diff = second_lowest_bid - lowest_bid
-                else:
-                    contest_diff = float('inf')
+    def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
+        """
+        Calculates a path from the agent's current position to the target using BFS.
+        Returns a list of (x, y) coordinates representing the path.
+        """
+        start = (start_x, start_y)
+        target = (target_x, target_y)
+        
+        if start == target:
+            return [start]
+            
+        queue = deque([[start]])
+        seen = set([start])
+        
+        while queue:
+            path = queue.popleft()
+            x, y = path[-1]
+            
+            if (x, y) == target:
+                return path
                 
-                if (contest_diff > max_contest_diff):
-                    max_contest_diff = contest_diff
-                    lowest_tiebreaker_bid = lowest_bid
-                    best_frontier = f
-                    winning_agent = best_agent_f
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                
+                if 0 <= nx < self.width and 0 <= ny < self.height:
+                    if (nx, ny) not in seen:
+                        if self.shared_belief.traversability[ny][nx] != TraversabilityLevel.UNTRAVERSABLE:
+                            seen.add((nx, ny))
+                            queue.append(path + [(nx, ny)])
+                            
+        return []
 
-                # tiebreaker
-                elif (contest_diff == max_contest_diff) and (lowest_bid < lowest_tiebreaker_bid):
-                    lowest_tiebreaker_bid = lowest_bid
-                    best_frontier = f
-                    winning_agent = best_agent_f
-
-            if not winning_agent or not best_frontier:
-                break
-            bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
-            winning_agent.current_task = bound_task
-            winning_agent.current_path = []  # force path recalculation toward new frontier
-
-            logger.debug(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
-            unassigned_frontiers.remove(best_frontier)
-            available_agents.remove(winning_agent)
-        
-
-
+    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int]]) -> None:        
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+        fig, ax = plt.subplots(figsize=(8, 8))
+        display = np.zeros((*frontier_mask.shape, 3), dtype=np.uint8)
+        display[self.global_explored] = [200, 200, 200]      # explored = light grey
+        display[frontier_mask] = [50, 200, 50]               # frontier cells = green
+        ax.imshow(display, origin='upper')
+        for row, col in centroids:
+            ax.plot(col, row, 'r*', markersize=12)
+            ax.annotate(f"({col},{row})", (col, row), textcoords="offset points",
+                        xytext=(4, 4), color='red', fontsize=8)
+        ax.set_title(f"Frontiers ({len(centroids)} clusters)")
+        ax.set_xlabel("x"); ax.set_ylabel("y")
+        plt.tight_layout()
+        plt.show()

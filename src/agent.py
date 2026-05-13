@@ -1,18 +1,17 @@
+from __future__ import annotations
 from collections import deque
-
-import numpy as np
-
 from .state import State
-from .constants import AgentAction, FireLevel, Scan, Task, TaskType, TraversabilityLevel
 import numpy as np
-
 from numpy.typing import NDArray
-
 from dataclasses import dataclass
-from typing import Self
-
+from typing import TYPE_CHECKING, Self
 from tcod.map import compute_fov
 from tcod.libtcodpy import FOV_RESTRICTIVE
+
+from .constants import AgentAction, FireLevel, Scan, Task, TaskType, TraversabilityLevel
+
+if TYPE_CHECKING:
+    from .supervisor import Supervisor
 
 # Threshold for what value of traversability causes a tile to become 'opaque' to the LoS check
 LOS_THRESHOLD = 1
@@ -126,7 +125,7 @@ class Agent:
         """
         return AgentAction.MOVE_RIGHT
     
-    def check_task_status(self):
+    def check_task_status(self, supervisor: Supervisor | None) -> None:
         """
         Checks whether the agent has completed its current task, base Agent doesn't use it
         """
@@ -143,6 +142,12 @@ class Agent:
         Sets the current task of the agent, to be used by the supervisor for task allocation
         """
         pass
+
+    def get_current_path(self) -> list[tuple[int, int]] | None:
+        """
+        Returns the current path of the agent, to be used by the supervisor for task allocation
+        """
+        return None
 
     def set_current_path(self, path: list[tuple[int, int]]) -> None:
         """

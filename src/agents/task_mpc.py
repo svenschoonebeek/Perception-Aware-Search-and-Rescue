@@ -6,7 +6,8 @@ from typing import Self
 from scipy.ndimage import binary_dilation
 
 from src.agent import Agent, AgentAction
-from src.constants import FireLevel, Task, TaskType, TraversabilityLevel
+from src.constants import EventPriority, FireLevel, InterventionEvent, Task, TaskType, TraversabilityLevel
+from src.supervisor import Supervisor
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ class TaskMpcAgent(Agent):
         # Task info
         self.current_task = Task(TaskType.IDLE, -1, -1)
         self.current_path: list[tuple[int, int]] = []
+
+        self.impatience_counter = 0
     
     def copy(self) -> Self:
         copy = super().copy()
@@ -34,6 +37,7 @@ class TaskMpcAgent(Agent):
 
         copy.current_path = list(self.current_path)
         copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
+        copy.impatience_counter = self.impatience_counter
 
         return copy
 
@@ -43,6 +47,9 @@ class TaskMpcAgent(Agent):
     def set_current_task(self, task: Task) -> None:
         self.current_task = task
 
+    def get_current_path(self) -> list[tuple[int, int]]:
+        return self.current_path
+    
     def set_current_path(self, path: list[tuple[int, int]]) -> None:
         self.current_path = path
     
@@ -79,50 +86,18 @@ class TaskMpcAgent(Agent):
 
         return best_sequence[0]
     
-    def check_task_status(self) -> None:
+    def check_task_status(self, supervisor: Supervisor | None) -> None:
         """
         Checks whether the current task is completed, and if so, switches to idle
         """
-        if self.current_task.task_type == TaskType.IDLE:
+        if supervisor is None:
             return
         
         if self.current_task.task_type == TaskType.EXPLORE:
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
-            if distance_to_target <= self.scan_radius / 2.0:
-                self._return_to_idle()
-    
-    def _calculate_path(self, target_x: int, target_y: int) -> list[tuple[int, int]]:
-        """
-        Calculates a path from the agent's current position to the target using BFS.
-        Returns a list of (x, y) coordinates representing the path.
-        """
-        start = (self.x, self.y)
-        target = (target_x, target_y)
-        
-        if start == target:
-            return [start]
-            
-        queue = deque([[start]])
-        seen = set([start])
-        
-        while queue:
-            path = queue.popleft()
-            x, y = path[-1]
-            
-            if (x, y) == target:
-                return path
-                
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nx, ny = x + dx, y + dy
-                
-                if 0 <= nx < self.world_width and 0 <= ny < self.world_height:
-                    if (nx, ny) not in seen:
-                        if self.perception.traversability[ny][nx] != TraversabilityLevel.UNTRAVERSABLE:
-                            seen.add((nx, ny))
-                            queue.append(path + [(nx, ny)])
-                            
-        return []
-    
+            if distance_to_target < self.scan_radius / 2.0:
+                self._return_to_idle(supervisor)
+
     def _is_path_blocked(self) -> bool:
         """
         Checks if the currently planned path contains any newly discovered walls or fires.
@@ -137,10 +112,15 @@ class TaskMpcAgent(Agent):
                 
         return False
     
-    def _return_to_idle(self) -> None:
+    def _return_to_idle(self, supervisor: Supervisor) -> None:
         """
         Helper function to return to idle state after completing a task
         """
+        supervisor.trigger_event(InterventionEvent(
+            priority=EventPriority.TASK_COMPLETED,
+            description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
+            data={"agent": self.name}
+        ))
         self.current_task = Task(TaskType.IDLE, -1, -1)
         self.current_path = []
     
@@ -184,22 +164,17 @@ class TaskMpcAgent(Agent):
 
         return safety + confidence + path_score
 
-    def get_carrot_waypoint(self) -> tuple[int, int]:
-        # if len(self.current_path) > 0 and self._is_path_blocked():
-        #     print(f"{self.name} realizes path is blocked! Recalculating path.")
-        #     self.current_path = []
-        
+    def get_carrot_waypoint(self) -> tuple[int, int]:        
         if len(self.current_path) == 0:
-            self.current_path = self._calculate_path(self.current_task.x, self.current_task.y)
-        
-        if len(self.current_path) == 0:
-            return (self.current_task.x, self.current_task.y)
+            return (self.x, self.y)
         
         current_idx = 0
+        min_dist = float('inf')
         for i, (px, py) in enumerate(self.current_path):
-            if (px, py) == (self.x, self.y):
+            dist = np.linalg.norm(np.array([py, px]) - np.array([self.y, self.x]))
+            if dist < min_dist:
+                min_dist = dist
                 current_idx = i
-                break
         
         # look 2 steps ahead on the path, this will be the carrot
         lookahead_idx = min(current_idx + 2, len(self.current_path) - 1)
