@@ -121,56 +121,98 @@ class Supervisor:
         """
         Assigns tasks to agents based on the events in the queue, and the current shared belief state
         """
+        unassigned_tasks: list[Task] = []
+        bidding_agent_names = set()
+
         while self.event_queue:
             event = self.event_queue.pop(0)
             if event.priority == EventPriority.SPATIAL_CONFLICT:
-                conflicting_agent_names = event.data["agents"]
-                conflicting_agents = [a for a in agents if a.name in conflicting_agent_names]
-                self._run_burgard_frontier_auction(conflicting_agents)
+                bidding_agent_names.update(event.data["agents"])
+                for fx, fy in self._extract_frontiers():
+                    unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy))
+                # self._run_burgard_frontier_auction(conflicting_agents) # TODO remove
             
             elif event.priority == EventPriority.TASK_COMPLETED: # update agent tracker to set completed task to idle
                 completed_agent_name = event.data["agent"]
                 logger.debug(f"Agent {completed_agent_name} completed a task")
                 self.agent_tracker[completed_agent_name].task = Task(TaskType.IDLE, -1, -1)
+                # doesn't get added to the task list because it is just an update for the tracker, we should let agents go idle if it arises no conflicts
+        
+        bidding_agents = [a for a in agents if a.name in bidding_agent_names]
+        self._run_task_auction(unassigned_tasks, bidding_agents)
 
-    def _extract_frontiers(self) -> list:
-        explored = np.array(self.global_explored, dtype=bool)
-        traversable = self.shared_belief.traversability.matrix == TraversabilityLevel.TRAVERSABLE
-        
-        unexplored_and_traversable = (~explored) & traversable        
-        cross_structure = np.array([[0, 1, 0],
-                                    [1, 1, 1],
-                                    [0, 1, 0]])
-        
-        adjacent_to_unexplored = binary_dilation(unexplored_and_traversable, structure=cross_structure)
-        
-        frontier_mask = explored & traversable & adjacent_to_unexplored
-        
-        grouping_structure = np.ones((3, 3), dtype=int)
-        labeled_mask, num_regions_raw = cast(
-            tuple[np.ndarray, int],
-            label(frontier_mask, structure=grouping_structure)
-            )
-        
-        centroids = []
-        
-        for i in range(1, num_regions_raw + 1):
-            coords = np.argwhere(labeled_mask == i)
-            
-            if len(coords) == 0:
-                continue
-            
-            mean_coord = coords.mean(axis=0)
-            
-            distances = cdist([mean_coord], coords)
-            closest_idx = np.argmin(distances)
-            best_coord = coords[closest_idx]
-            
-            centroids.append((int(best_coord[1]), int(best_coord[0])))  # return (x, y) = (col, row)
 
-            # self._visualize_frontiers(frontier_mask, centroids)
+    def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent]) -> None:
+        if not unassigned_tasks or not bidding_agents:
+            return
+        logger.debug(f"Auctioning these tasks: {unassigned_tasks}")
 
-        return centroids
+        available_agents = list(bidding_agents)
+        claimed_tasks: list[Task] = []
+
+        bidding_agent_names = {agent.name for agent in bidding_agents}
+        other_agent_info = {
+            name: info for name, info in self.agent_tracker.items() 
+            if name not in bidding_agent_names
+        }
+
+        # weights for burgards spatial exclusivity, being assigned close to an existing target and close to an idle agent, respectively
+        w_spatial_claimed, w_close_to_target, w_close_to_agent = 500.0, 300.0, 150.0
+        explore_base_reward = 100.0
+
+        while unassigned_tasks and bidding_agents:
+            best_task = None
+            winning_agent = None
+            highest_utility = float('-inf')
+
+            for task in unassigned_tasks:
+                # base reward
+                if task.task_type == TaskType.EXPLORE:
+                    base_reward = explore_base_reward
+                
+                burgard_penalty = 0.0
+                for claimed_t in claimed_tasks:
+                    if claimed_t.task_type == TaskType.EXPLORE:
+                        distance = np.sqrt((task.x - claimed_t.x)**2 + (task.y - claimed_t.y)**2)
+                        burgard_penalty += w_spatial_claimed * np.exp(-distance)
+                
+                for agent_info in other_agent_info.values():
+                    if agent_info.task.task_type == TaskType.EXPLORE:
+                        task_location = (agent_info.task.x, agent_info.task.y)
+                        distance_to_task = np.sqrt((task.x - task_location[0])**2 + (task.y - task_location[1])**2)
+                        burgard_penalty += w_close_to_target * np.exp(-distance_to_task) # penalize frontiers close to other agents' current tasks
+                    
+                    elif agent_info.task.task_type == TaskType.IDLE:
+                        physical_dist = np.sqrt((task.x - agent_info.x)**2 + (task.y - agent_info.y)**2)
+                        burgard_penalty += w_close_to_agent * np.exp(-physical_dist)
+                
+                # evaulate each bidding agent against this task
+                for agent in available_agents:
+                    travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
+                    total_utility = base_reward - travel_cost - burgard_penalty
+
+                    if total_utility > highest_utility:
+                        highest_utility = total_utility
+                        best_task = task
+                        winning_agent = agent
+                if not best_task or not winning_agent:
+                    break
+                
+                winning_agent.set_current_task(best_task)
+                winning_agent.set_current_path(self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y))
+
+                self.agent_tracker[winning_agent.name].task = best_task
+                logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
+                
+                claimed_tasks.append(best_task)
+                unassigned_tasks.remove(best_task)
+                available_agents.remove(winning_agent)
+
+        for agent in available_agents:
+            logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")
+            agent.set_current_task(Task(TaskType.IDLE, -1, -1))
+            agent.set_current_path([])
+
 
     def _run_burgard_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
         """
@@ -244,6 +286,44 @@ class Supervisor:
             agent.set_current_task(Task(TaskType.IDLE, -1, -1))
             agent.set_current_path([])
     
+    def _extract_frontiers(self) -> list:
+        explored = np.array(self.global_explored, dtype=bool)
+        traversable = self.shared_belief.traversability.matrix == TraversabilityLevel.TRAVERSABLE
+        
+        unexplored_and_traversable = (~explored) & traversable        
+        cross_structure = np.array([[0, 1, 0],
+                                    [1, 1, 1],
+                                    [0, 1, 0]])
+        
+        adjacent_to_unexplored = binary_dilation(unexplored_and_traversable, structure=cross_structure)
+        
+        frontier_mask = explored & traversable & adjacent_to_unexplored
+        
+        grouping_structure = np.ones((3, 3), dtype=int)
+        labeled_mask, num_regions_raw = cast(
+            tuple[np.ndarray, int],
+            label(frontier_mask, structure=grouping_structure)
+            )
+        
+        centroids = []
+        
+        for i in range(1, num_regions_raw + 1):
+            coords = np.argwhere(labeled_mask == i)
+            
+            if len(coords) == 0:
+                continue
+            
+            mean_coord = coords.mean(axis=0)
+            
+            distances = cdist([mean_coord], coords)
+            closest_idx = np.argmin(distances)
+            best_coord = coords[closest_idx]
+            
+            centroids.append((int(best_coord[1]), int(best_coord[0])))  # return (x, y) = (col, row)
+
+            # self._visualize_frontiers(frontier_mask, centroids)
+
+        return centroids
 
     def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
         """
@@ -285,7 +365,7 @@ class Supervisor:
         display[self.global_explored] = [200, 200, 200]      # explored = light grey
         display[frontier_mask] = [50, 200, 50]               # frontier cells = green
         ax.imshow(display, origin='upper')
-        for row, col in centroids:
+        for col, row in centroids:
             ax.plot(col, row, 'r*', markersize=12)
             ax.annotate(f"({col},{row})", (col, row), textcoords="offset points",
                         xytext=(4, 4), color='red', fontsize=8)
