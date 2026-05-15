@@ -5,13 +5,14 @@ from .agent import Agent
 from .visualization import Visualizer
 
 WIDTH = 40
-HEIGHT = 40
+HEIGHT = 30
 
 def main():
     sim = Simulator(WIDTH, HEIGHT)
-    config = MapConfig(num_rooms=3, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=7, max_room_width=7, max_tunnel_thickness=1)
-    sim.generate_ground_truth(config, 210577037)
+    config = MapConfig(num_rooms=6, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=7, max_room_width=7, max_tunnel_thickness=1)
+    sim.generate_ground_truth(config)
 
+    # seed: 197357699 
     # Saved seeds: 182840517 (181 steps); 
 
     agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, True)
