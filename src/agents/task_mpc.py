@@ -76,7 +76,7 @@ class TaskMpcAgent(MpcAgent):
                 supervisor.trigger_event(InterventionEvent(
                     priority=EventPriority.SPATIAL_CONFLICT,
                     description=f"{self.name} detected a spatial conflict locally.",
-                    data={"agents": [self.name]}
+                    data={"agent": [self.name]}
                     ))
                 self.conflict_timeout = 0
                 return
@@ -133,22 +133,46 @@ class TaskMpcAgent(MpcAgent):
         """
         Goes to a certain objective tile (e.g. a frontier) and then switches to wander mode
         """
-        w_exploration, w_safety, w_confidence, w_path = 100, 20, 1, 200 # To be adjusted
+        w_exploration, w_safety, w_confidence, w_path = 100, 20, 1, 100 # To be adjusted
 
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
         # TODO maybe here we also do exploration? such that it explores on the way
         # exploration =  w_exploration * self._exploration_score()
 
-        carrot_x, carrot_y = self.get_carrot_waypoint()
-        carrot_distance = np.linalg.norm(np.array([carrot_y, carrot_x]) - np.array([self.y, self.x]))
-        path_score = w_path * float(1.0 / (1.0 + carrot_distance))
+        # carrot_x, carrot_y = self.get_carrot_waypoint()
+        # carrot_distance = np.linalg.norm(np.array([carrot_y, carrot_x]) - np.array([self.y, self.x]))
+        # path_score = w_path * float(1.0 / (1.0 + carrot_distance))
+
+        path_score = w_path * self._calculate_path_score()
 
         # print("path_score:", path_score, "Safety:", safety, "Confidence:", confidence)
 
-        return safety + confidence + path_score
+        return safety + confidence + path_score # + exploration
+    
+    def _calculate_path_score(self) -> float:
+        """
+        Calculates a raw, normalized score for how well the agent is adhering to its path.
+        """
+        if len(self.current_path) == 0:
+            return 0.0
+        
+        min_dist = float('inf')
+        closest_idx = 0
+        
+        for i, (px, py) in enumerate(self.current_path):
+            dist = np.sqrt((px - self.x)**2 + (py - self.y)**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
 
-    def get_carrot_waypoint(self) -> tuple[int, int]:        
+        if min_dist == 0: # exactly on the path
+            return 4.0 + (closest_idx * 0.1)
+        else: # off the path
+            return 3.0 - (min_dist * 0.2)
+
+
+    def _get_carrot_waypoint(self) -> tuple[int, int]:        
         if len(self.current_path) == 0:
             return (self.x, self.y)
         
@@ -162,4 +186,5 @@ class TaskMpcAgent(MpcAgent):
         
         # look 2 steps ahead on the path, this will be the carrot
         lookahead_idx = min(current_idx + 2, len(self.current_path) - 1)
-        return self.current_path[lookahead_idx]
+        res = self.current_path[lookahead_idx]
+        return res

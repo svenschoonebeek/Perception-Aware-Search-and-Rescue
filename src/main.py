@@ -49,7 +49,7 @@ def main():
     # agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # sim.add_agent(agent3)
 
-    supervisor = Supervisor(WIDTH, HEIGHT, 0.05)
+    supervisor = Supervisor(WIDTH, HEIGHT, 0.05, 5)
     sim.set_supervisor(supervisor)
 
     # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, 
@@ -57,7 +57,7 @@ def main():
     #                    sim.ground_truth.fire)
 
     logger.info("Running Simulation steps...")
-    history = sim.run(100) 
+    history = sim.run(40)
 
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)

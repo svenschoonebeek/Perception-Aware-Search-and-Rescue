@@ -16,17 +16,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class Supervisor:
-    def __init__(self, width: int, height: int, decay: float):
+    def __init__(self, width: int, height: int, decay: float, impatiance_threshold: int = 10):
         self.width = width
         self.height = height
         self.shared_belief = State(width, height)
         self.shared_belief.traversability.matrix = np.full((height, width), TraversabilityLevel.TRAVERSABLE)
         self.global_explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the supervisor has received information about
         
+        self.impatience_threshold = impatiance_threshold
         self.decay = decay # Certainty decay per time step [0,1]
         self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
 
-        self.agent_tracker: dict[str, AgentInfo] = {} # tracks the last known position and task of each agent, for conflict checking
+        self.agent_tracker: dict[str, AgentInfo] = {} # tracks necessary information for each agent, used in conflict checking
 
     def requires_intervention(self) -> bool:
         """
@@ -49,11 +50,16 @@ class Supervisor:
 
         for scan in agent_scans:
             if scan.agent_name not in self.agent_tracker:
-                self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE, -1, -1))
+                self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE, -1, -1), 0)
             else:
                 self.agent_tracker[scan.agent_name].x = scan.agent_x
                 self.agent_tracker[scan.agent_name].y = scan.agent_y
 
+            if np.all(self.global_explored[scan.ys, scan.xs]):
+                self.agent_tracker[scan.agent_name].impatience += 1
+            else:
+                self.agent_tracker[scan.agent_name].impatience = 0
+            
             self.global_explored[scan.ys, scan.xs] = True
 
             for x, y, trvs, vuln, vict, agnt, fire, conf in zip(scan.xs, scan.ys, scan.traversability, scan.vulnerability, scan.victims, scan.agents, scan.fire, scan.confidence):
@@ -65,8 +71,16 @@ class Supervisor:
                     self.shared_belief.fire[y][x] = fire
                     self.shared_belief.confidence.matrix[y][x] = conf
 
-    def check_for_global_impatience(self) -> None:
-        pass
+    def check_for_impatience(self) -> None:
+        for agent_name in self.agent_tracker.keys():
+            if self.agent_tracker[agent_name].impatience > self.impatience_threshold:
+                logger.debug(f"{agent_name} has high global impatience! Triggering intervention.")
+                self.trigger_event(InterventionEvent(
+                    priority=EventPriority.LOW_PROGRESS,
+                    description=f"{agent_name} is suffering from redundant coverage.",
+                    data={"agent": agent_name}
+            ))
+            self.agent_tracker[agent_name].impatience = 0 
 
     def check_for_victims(self) -> None:
         pass
@@ -80,8 +94,8 @@ class Supervisor:
 
         while self.event_queue:
             event = self.event_queue.pop(0)
-            if event.priority == EventPriority.SPATIAL_CONFLICT:
-                bidding_agent_names.update(event.data["agents"])
+            if event.priority == EventPriority.SPATIAL_CONFLICT or event.priority == EventPriority.LOW_PROGRESS:
+                bidding_agent_names.update(event.data["agent"])
                 for fx, fy in self._extract_frontiers():
                     unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy))
                 # self._run_burgard_frontier_auction(conflicting_agents) # TODO remove
@@ -166,79 +180,6 @@ class Supervisor:
             logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")
             agent.set_current_task(Task(TaskType.IDLE, -1, -1))
             agent.set_current_path([])
-
-
-    def _run_burgard_frontier_auction(self, conflicting_agents: list[Agent]) -> None:
-        """
-        Runs a Burgard-style frontier auction to assign new exploration tasks to the conflicting agents
-        """
-        frontiers = self._extract_frontiers()
-        logger.debug(f"Extracted frontiers: {frontiers}")
-        if not frontiers:
-            return
-        
-        unassigned_frontiers = list(frontiers)
-        available_agents = list(conflicting_agents)
-        claimed_targets = []
-
-        bidding_agent_names = {agent.name for agent in conflicting_agents}
-
-        # Keep only agents whose names are not in bidding set
-        other_agent_info = {
-            name: info for name, info in self.agent_tracker.items() 
-            if name not in bidding_agent_names
-        }
-
-        # weights for burgards spatial exclusivity, being assigned close to an existing target and close to an idle agent, respectively
-        w_spatial_claimed, w_close_to_target, w_close_to_agent = 500.0, 300.0, 150.0
-
-        while available_agents and unassigned_frontiers:
-            best_frontier = None
-            winning_agent = None
-            lowest_total_cost = float('inf')
-
-            for f in unassigned_frontiers:
-                burgard_penalty = 0.0
-                for claimed_f in claimed_targets:
-                    distance = np.sqrt((f[0] - claimed_f[0])**2 + (f[1] - claimed_f[1])**2)
-                    burgard_penalty += w_spatial_claimed * np.exp(-distance) # spatial exclusivity penalty
-                
-                for agent_info in other_agent_info.values():
-                    if agent_info.task.task_type == TaskType.EXPLORE:
-                        task_location = (agent_info.task.x, agent_info.task.y)
-                        distance_to_task = np.sqrt((f[0] - task_location[0])**2 + (f[1] - task_location[1])**2)
-                        burgard_penalty += w_close_to_target * np.exp(-distance_to_task) # penalize frontiers close to other agents' current tasks
-                    
-                    elif agent_info.task.task_type == TaskType.IDLE:
-                        physical_dist = np.sqrt((f[0] - agent_info.x)**2 + (f[1] - agent_info.y)**2)
-                        burgard_penalty += w_close_to_agent * np.exp(-physical_dist)
-        
-                for agent in available_agents:
-                    travel_cost = np.sqrt((agent.x - f[0])**2 + (agent.y - f[1])**2)
-                    total_cost = travel_cost + burgard_penalty
-
-                    if total_cost < lowest_total_cost:
-                        lowest_total_cost = total_cost
-                        best_frontier = f
-                        winning_agent = agent
-                
-            if not best_frontier or not winning_agent:
-                break
-            
-            bound_task = Task(TaskType.EXPLORE, best_frontier[0], best_frontier[1])
-            winning_agent.set_current_task(bound_task)
-            winning_agent.set_current_path(self._calculate_path(winning_agent.x, winning_agent.y, best_frontier[0], best_frontier[1]))
-
-            self.agent_tracker[winning_agent.name].task = bound_task
-            logger.debug(f"Auction assigned frontier {best_frontier} to agent {winning_agent.name}")
-            claimed_targets.append(best_frontier)
-            unassigned_frontiers.remove(best_frontier)
-            available_agents.remove(winning_agent)
-        
-        for agent in available_agents:
-            logger.debug(f"No frontiers left to assign, setting agent {agent.name} to idle")
-            agent.set_current_task(Task(TaskType.IDLE, -1, -1))
-            agent.set_current_path([])
     
     def _extract_frontiers(self) -> list:
         explored = np.array(self.global_explored, dtype=bool)
@@ -282,7 +223,12 @@ class Supervisor:
     def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
         """
         Calculates a path from the agent's current position to the target using BFS.
-        Returns a list of (x, y) coordinates representing the path.
+
+        Parameters:
+        start_x, start_y: The start coordinates of the path
+        target_x, target_y: The target coordinates of the path
+
+        Returns: a list of (x, y) coordinates representing the path.
         """
         start = (start_x, start_y)
         target = (target_x, target_y)

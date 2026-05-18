@@ -186,6 +186,9 @@ class MpcAgent(Agent):
         if self.perception.victims[target_cell_y][target_cell_x] == 1: # Hit victim
             return False
         
+        if self.perception.agents[target_cell_y][target_cell_x] == 1:
+            return False
+        
         return self.perception.traversability[target_cell_y][target_cell_x] == 0 # Didn't hit wall
     
     def _exploration_score(self) -> float:

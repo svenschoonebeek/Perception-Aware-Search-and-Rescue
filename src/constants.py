@@ -68,6 +68,7 @@ class AgentInfo:
     x: int 
     y: int
     task: Task
+    impatience: int
 
 @dataclass
 class Scan:
