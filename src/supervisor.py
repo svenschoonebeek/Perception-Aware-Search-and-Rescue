@@ -136,7 +136,7 @@ class Supervisor:
                 completed_agent_name = event.data["agent"]
                 logger.debug(f"Agent {completed_agent_name} completed a task")
                 self.agent_tracker[completed_agent_name].task = Task(TaskType.IDLE, -1, -1)
-                # doesn't get added to the task list because it is just an update for the tracker, we should let agents go idle if it arises no conflicts
+                # doesn't get added to the task list because it is just an update for the tracker, agents are free to go idle themselves.
         
         bidding_agents = [a for a in agents if a.name in bidding_agent_names]
         self._run_task_auction(unassigned_tasks, bidding_agents)
@@ -195,18 +195,18 @@ class Supervisor:
                         highest_utility = total_utility
                         best_task = task
                         winning_agent = agent
-                if not best_task or not winning_agent:
-                    break
-                
-                winning_agent.set_current_task(best_task)
-                winning_agent.set_current_path(self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y))
+            if not best_task or not winning_agent:
+                break
+            
+            winning_agent.set_current_task(best_task)
+            winning_agent.set_current_path(self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y))
 
-                self.agent_tracker[winning_agent.name].task = best_task
-                logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
-                
-                claimed_tasks.append(best_task)
-                unassigned_tasks.remove(best_task)
-                available_agents.remove(winning_agent)
+            self.agent_tracker[winning_agent.name].task = best_task
+            logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
+            
+            claimed_tasks.append(best_task)
+            unassigned_tasks.remove(best_task)
+            available_agents.remove(winning_agent)
 
         for agent in available_agents:
             logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")

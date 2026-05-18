@@ -73,7 +73,7 @@ class Simulator:
         
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
-            self.supervisor.check_for_spatial_conflicts()
+            self.supervisor.check_for_spatial_conflicts() # TODO change to events triggered by agents themselves rather than checking
             self.supervisor.check_for_global_impatience()
             self.supervisor.check_for_victims()
 

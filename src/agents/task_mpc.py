@@ -151,15 +151,17 @@ class TaskMpcAgent(Agent):
         """
         Goes to a certain objective tile (e.g. a frontier) and then switches to wander mode
         """
-        w_safety, w_confidence, w_path = 20, 1, 500 # To be adjusted
+        w_exploration, w_safety, w_confidence, w_path = 100, 20, 1, 200 # To be adjusted
 
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
+        # TODO maybe here we also do exploration? such that it explores on the way
+        # exploration =  w_exploration * self._exploration_score()
 
         carrot_x, carrot_y = self.get_carrot_waypoint()
         carrot_distance = np.linalg.norm(np.array([carrot_y, carrot_x]) - np.array([self.y, self.x]))
         path_score = w_path * float(1.0 / (1.0 + carrot_distance))
-        # TODO maybe here we also do exploration? such that it explores on the way
+
         # print("path_score:", path_score, "Safety:", safety, "Confidence:", confidence)
 
         return safety + confidence + path_score
