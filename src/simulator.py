@@ -66,14 +66,13 @@ class Simulator:
         agent_scans: list[Scan] = []
         for agent in self.agents:
             agent_scans.append(agent.scan(self.ground_truth))
-            agent.check_task_status(self.supervisor)
+            agent.check_status(self.supervisor, self.ground_truth)
             if (task := agent.get_current_task()) is not None:
                 logger.debug(f"Agent {agent.name} has task {task.task_type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
                 logger.debug(f"has path: {agent.get_current_path()}")
         
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
-            self.supervisor.check_for_spatial_conflicts() # TODO change to events triggered by agents themselves rather than checking
             self.supervisor.check_for_global_impatience()
             self.supervisor.check_for_victims()
 

@@ -2,6 +2,7 @@ from typing import Self
 import numpy as np
 
 from .mpc import MpcAgent
+from src.state import State
 from src.constants import *
 from src.supervisor import Supervisor
 
@@ -14,7 +15,8 @@ class TaskMpcAgent(MpcAgent):
         # Task info
         self.current_task = Task(TaskType.IDLE, -1, -1)
         self.current_path: list[tuple[int, int]] = []
-
+        
+        self.conflict_timeout = 0
         self.impatience_counter = 0
     
     def copy(self) -> Self:
@@ -38,9 +40,13 @@ class TaskMpcAgent(MpcAgent):
     def set_current_path(self, path: list[tuple[int, int]]) -> None:
         self.current_path = path
     
-    def check_task_status(self, supervisor: Supervisor | None) -> None:
+    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
         """
-        Checks whether the current task is completed, and if so, switches to idle
+        Checks whether the status of the agent, like if a target has been met, and triggers the corresponding event for the supervisor.
+
+        Parameters:
+        supervisor: the supervisor to trigger
+        state: the true world (used for checking if close to another agent)
         """
         if supervisor is None:
             return
@@ -49,16 +55,40 @@ class TaskMpcAgent(MpcAgent):
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
             if distance_to_target < self.scan_radius / 2.0:
                 self._return_to_idle(supervisor)
+        
+        self.conflict_timeout += 1
+        if (self.conflict_timeout >= 3):
+            self._check_for_spatial_conflict(supervisor, state)
+
+    def _check_for_spatial_conflict(self, supervisor: Supervisor, state: State):
+        conflict_distance = self.scan_radius # could change this to be smaller
+
+        visible = self._tiles_in_radius() & self._tiles_in_los(state)
+        conflict_mask = visible & (self.perception.agents.matrix > 0)
+        agent_ys, agent_xs = np.nonzero(conflict_mask)
+
+        for y, x in zip(agent_ys, agent_xs):
+            if x == self.x and y == self.y:
+                continue
+            
+            distance = np.sqrt((self.x - x)**2 + (self.y - y)**2)
+            if distance < conflict_distance:
+                supervisor.trigger_event(InterventionEvent(
+                    priority=EventPriority.SPATIAL_CONFLICT,
+                    description=f"{self.name} detected a spatial conflict locally.",
+                    data={"agents": [self.name]}
+                    ))
+                self.conflict_timeout = 0
+                return
     
     def _is_path_blocked(self) -> bool:
         """
         Checks if the currently planned path contains any newly discovered walls or fires.
         """
         for x, y in self.current_path:
-            # Did we just discover a wall here?
             if self.perception.traversability[y][x] == TraversabilityLevel.UNTRAVERSABLE:
                 return True
-            #? should count fire as blocking? I don't think so
+            #? should count fire as blocking?
             # if self.perception.fire[y][x] == FireLevel.BURNING:
             #     return True
                 

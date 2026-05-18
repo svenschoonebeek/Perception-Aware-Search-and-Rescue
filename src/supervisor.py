@@ -7,7 +7,7 @@ import logging
 from .agent import Agent
 from .state import State
 from .constants import *
-from scipy.ndimage import binary_dilation, label, center_of_mass
+from scipy.ndimage import binary_dilation, label
 from scipy.spatial.distance import cdist
 
 if TYPE_CHECKING:
@@ -26,11 +26,7 @@ class Supervisor:
         self.decay = decay # Certainty decay per time step [0,1]
         self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
 
-        self.agent_scan_radius = 3 # how far agents can scan, used for conflict checking
         self.agent_tracker: dict[str, AgentInfo] = {} # tracks the last known position and task of each agent, for conflict checking
-
-        self.spatial_conflict_cooldown = 3
-
 
     def requires_intervention(self) -> bool:
         """
@@ -68,48 +64,6 @@ class Supervisor:
                     self.shared_belief.agents[y][x] = agnt
                     self.shared_belief.fire[y][x] = fire
                     self.shared_belief.confidence.matrix[y][x] = conf
-        
-    def check_for_spatial_conflicts(self) -> None:
-        """
-        Checks for conflicts between active tasks and locations of agents
-        """
-        if (self.spatial_conflict_cooldown > 0):
-            self.spatial_conflict_cooldown -= 1
-            return
-        
-        if len(self.agent_tracker) < 2:
-            return
-        
-        names = list(self.agent_tracker.keys())
-        information = list(self.agent_tracker.values())
-        
-        conflict_distance_threshold = self.agent_scan_radius * 1.5 
-
-        conflicting_agent_names = set()
-
-        # Check pairwise distances between agents 
-        for i in range(len(information)):
-            for j in range(i + 1, len(information)):
-                x1, y1 = information[i].x, information[i].y
-                x2, y2 = information[j].x, information[j].y
-                
-                distance = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
-                
-                if distance < conflict_distance_threshold:
-                    logger.debug(f"Spatial Conflict Detected between {names[i]} and {names[j]}! Distance: {distance:.1f}")
-                    conflicting_agent_names.add(names[i])
-                    conflicting_agent_names.add(names[j])
-
-        if conflicting_agent_names:
-            logger.debug(f"Triggering conflict resolution for: {conflicting_agent_names}")
-            
-            self.trigger_event(InterventionEvent(
-                priority=EventPriority.SPATIAL_CONFLICT,
-                description=f"Spatial Conflict involving {len(conflicting_agent_names)} agents.",
-                data={"agents": list(conflicting_agent_names)} 
-            ))
-        
-        self.spatial_conflict_cooldown = 3
 
     def check_for_global_impatience(self) -> None:
         pass

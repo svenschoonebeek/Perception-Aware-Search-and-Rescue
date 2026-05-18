@@ -125,7 +125,7 @@ class Agent:
         """
         return AgentAction.MOVE_RIGHT
     
-    def check_task_status(self, supervisor: Supervisor | None) -> None:
+    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
         """
         Checks whether the agent has completed its current task, base Agent doesn't use it
         """
