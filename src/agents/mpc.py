@@ -53,10 +53,11 @@ class MpcAgent(Agent):
             best_sequence = []
 
             for action in AgentAction:
-                if not model_state._is_feasible(model_state._target_cell(action)):
+                next_state = model_state._predict_next_state(action, depth)
+                
+                if not next_state._is_feasible((next_state.x, next_state.y)):
                     continue
 
-                next_state = model_state._predict_next_state(action, depth)
                 next_objective = objective + ((self.discount ** depth) * next_state._objective_stage())
                 
                 future_obj, future_seq = dfs(next_state, depth + 1, next_objective)
