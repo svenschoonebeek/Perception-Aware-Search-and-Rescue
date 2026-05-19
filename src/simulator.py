@@ -267,8 +267,7 @@ class Simulator:
             tile_vulnerability = float(self.ground_truth.vulnerability[agent.y][agent.x])
             tile_confidence = agent.perception.confidence[agent.y][agent.x]
 
-            confidence_mult = 0.7
-            trip_prob = max(0.0, tile_vulnerability - confidence_mult * tile_confidence)
+            trip_prob = max(0.0, tile_vulnerability - tile_confidence) ** 2
             if np.random.random() > trip_prob:
                 continue # Don't trip
 
