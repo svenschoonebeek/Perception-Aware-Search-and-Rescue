@@ -18,6 +18,7 @@ class MetricInTime:
     terrain_collisions: dict[Agent, int]
     victim_collisions: dict[Agent, int]
     inter_agent_collisions: dict[Agent, int]
+    fire_collisions: dict[Agent, int]
     wait_actions: dict[Agent, int]
     damage: dict[Agent, int]
     area_explored: dict[Agent, float]
@@ -28,6 +29,7 @@ class Metric:
         self.terrain_collisions: dict[Agent, int] = {} # Number of times agent hits a wall
         self.victim_collisions: dict[Agent, int] = {} # Number of times it hits a victim
         self.inter_agent_collisions: dict[Agent, int] = {} # Number of times it collides with another agent
+        self.fire_collisions: dict[Agent, int] = {} # Number of steps it spends in burning tiles
         self.wait_actions: dict[Agent, int] = {}  # How many times the agent chooses to wait
         self.damage: dict[Agent, int] = {}  # (terrain collisions + victim collisions + inter-agent collisions) 
                                             # * damage per collision (for now all same)
@@ -69,6 +71,10 @@ class Metric:
         self.inter_agent_collisions[agent] += 1
         self.damage[agent] += 1
 
+    def record_fire_collision(self, agent: Agent) -> None:
+        self.fire_collisions[agent] += 1
+        self.damage[agent] += 1
+
     def record_vulnerable_collision(self, agent: Agent, vulnerable: float) -> None:
         rnd = np.random.random()
         if (rnd < vulnerable):
@@ -90,6 +96,7 @@ class Metric:
             terrain_collisions=dict(self.terrain_collisions),
             victim_collisions=dict(self.victim_collisions),
             inter_agent_collisions=dict(self.inter_agent_collisions),
+            fire_collisions=dict(self.fire_collisions),
             wait_actions=dict(self.wait_actions),
             damage=dict(self.damage),
             area_explored=dict(self.area_explored),
