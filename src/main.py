@@ -34,9 +34,9 @@ def main():
     sim = Simulator(WIDTH, HEIGHT)
     # config = MapConfig(num_rooms=7, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=2, min_tunnel_thickness=2
     #                    , initial_fire_points=0)
-    config = MapConfig(num_rooms=10, num_victims=10, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.02, fire_duration=100, initial_fire_points=1)
+    config = MapConfig(num_rooms=10, num_victims=10, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.02, fire_duration=100, initial_fire_points=0)
 
-    sim.generate_ground_truth(config) # 809315671
+    sim.generate_ground_truth(config,544406041) # 809315671
 
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
@@ -50,8 +50,8 @@ def main():
     # # agent2 = RandAgent("rand2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
     sim.add_agent(agent2)
 
-    # agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
-    # sim.add_agent(agent3)
+    agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
+    sim.add_agent(agent3)
 
     # agent4 = TaskMpcAgent("tasker4", 1, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # sim.add_agent(agent4)
