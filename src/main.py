@@ -59,9 +59,9 @@ def main():
 
     number_of_sims = 100
     max_steps = 300
-    mpc = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.9, 4, True)
-    tmpc = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.9, 4, True)
-    # agent = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.9, 4, True)
+    mpc = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.4, 4, True)
+    tmpc = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.4, 4, True)
+    # agent = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.4, 4, True)
 
     # * RUN SIMULATIONS
     # for i in range(number_of_sims):
