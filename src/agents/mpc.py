@@ -54,8 +54,7 @@ class MpcAgent(Agent):
 
             for action in AgentAction:
                 tx, ty = model_state._target_cell(action)
-                if (not(0 <= tx < model_state.world_width and 0 <= ty < model_state.world_height)
-                    or model_state.perception.traversability[ty, tx] == TraversabilityLevel.UNTRAVERSIBLE):
+                if not(0 <= tx < model_state.world_width and 0 <= ty < model_state.world_height):
                     continue
 
                 next_state = model_state._predict_next_state(action, depth)
