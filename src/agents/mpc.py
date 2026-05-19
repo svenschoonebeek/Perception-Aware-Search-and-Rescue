@@ -71,11 +71,11 @@ class MpcAgent(Agent):
 
         if len(best_sequence) == 0:
             self.infeasible_states += 1
-            print("INFEASIBLE STATE REACHED ==========================")
-            print("Dscv:", self._discovery_score())
-            print("Safety:", self._safety_penalty())
-            print("Conf:", self._confidence_score())
-            print("Expl:", self._exploration_penalty())
+            logger.debug("INFEASIBLE STATE REACHED ==========================")
+            logger.debug("Dscv:", self._discovery_score())
+            logger.debug("Safety:", self._safety_penalty())
+            logger.debug("Conf:", self._confidence_score())
+            logger.debug("Expl:", self._exploration_penalty())
             return AgentAction.WAIT
 
         return best_sequence[0]
@@ -205,7 +205,7 @@ class MpcAgent(Agent):
         """
         newly_explored = np.count_nonzero(self.discovered)
 
-        return newly_explored / ((np.pi * self.scan_radius ** 2) / 2)
+        return float(newly_explored / ((np.pi * self.scan_radius ** 2) / 2))
 
     def _safety_penalty(self) -> float:
         """

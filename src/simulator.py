@@ -1,3 +1,4 @@
+import atexit
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -343,8 +344,13 @@ class Simulator:
         
         if seed is None:
             seed = (int) (np.random.random() * 1_000_000_000)
-        logger.info(f"Using seed {seed} to generate the map.")
         np.random.seed(seed)
+        
+        def log_seed():
+            logger.info(f"Using seed {seed} to generate the map.")
+        log_seed()
+        atexit.register(log_seed)
+        
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
                                                                                         config.num_rooms, config.unconnected_probability, 

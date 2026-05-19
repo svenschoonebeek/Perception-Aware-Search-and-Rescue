@@ -9,6 +9,7 @@ from .state import State
 from .constants import *
 from scipy.ndimage import binary_dilation, label
 from scipy.spatial.distance import cdist
+from scipy.cluster.vq import kmeans
 
 if TYPE_CHECKING:
     from src.agent import Agent
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class Supervisor:
-    def __init__(self, width: int, height: int, decay: float, impatiance_threshold: int = 10):
+    def __init__(self, width: int, height: int, decay: float, impatiance_threshold: int = 5):
         self.width = width
         self.height = height
         self.shared_belief = State(width, height)
@@ -73,14 +74,16 @@ class Supervisor:
 
     def check_for_impatience(self) -> None:
         for agent_name in self.agent_tracker.keys():
+            impatience = self.agent_tracker[agent_name].impatience
+            logger.debug(f"Agent {agent_name} has impatience level {impatience}")
             if self.agent_tracker[agent_name].impatience > self.impatience_threshold:
                 logger.debug(f"{agent_name} has high global impatience! Triggering intervention.")
                 self.trigger_event(InterventionEvent(
                     priority=EventPriority.LOW_PROGRESS,
                     description=f"{agent_name} is suffering from redundant coverage.",
                     data={"agent": agent_name}
-            ))
-            self.agent_tracker[agent_name].impatience = 0 
+                ))
+                self.agent_tracker[agent_name].impatience = 0 
 
     def check_for_victims(self) -> None:
         pass
@@ -93,10 +96,15 @@ class Supervisor:
         bidding_agent_names = set()
         extract_frontiers_flag = False
 
+        logger.debug(f"Supervisor is resolving events: {[e.description for e in self.event_queue]}")
         while self.event_queue:
             event = self.event_queue.pop(0)
-            if event.priority == EventPriority.SPATIAL_CONFLICT or event.priority == EventPriority.LOW_PROGRESS:
-                bidding_agent_names.update(event.data["agent"])
+            if event.priority == EventPriority.SPATIAL_CONFLICT:
+                bidding_agent_names.add(event.data["agent"])
+                extract_frontiers_flag = True
+            
+            elif event.priority == EventPriority.LOW_PROGRESS:
+                bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
             
             elif event.priority == EventPriority.TASK_COMPLETED: # update agent tracker to set completed task to idle
@@ -204,23 +212,32 @@ class Supervisor:
             )
         
         centroids = []
-        
+        tiles_per_target = 4 # how many frontier tiles should be in a cluster
+
         for i in range(1, num_regions_raw + 1):
             coords = np.argwhere(labeled_mask == i)
             
             if len(coords) == 0:
                 continue
+            num_targets = max(1, len(coords) // tiles_per_target)
             
-            mean_coord = coords.mean(axis=0)
-            
-            distances = cdist([mean_coord], coords)
-            closest_idx = np.argmin(distances)
-            best_coord = coords[closest_idx]
-            
-            centroids.append((int(best_coord[1]), int(best_coord[0])))  # return (x, y) = (col, row)
+            if num_targets == 1:
+                # Standard mean for small regions
+                mean_coord = coords.mean(axis=0)
+                distances = cdist([mean_coord], coords)
+                best_coord = coords[np.argmin(distances)]
+                centroids.append((int(best_coord[1]), int(best_coord[0])))
+            else:
+                cluster_centers, _ = kmeans(coords.astype(float), num_targets)
+                distances = cdist(cluster_centers, coords)
+                
+                closest_indices = np.argmin(distances, axis=1)
+                
+                for idx in np.unique(closest_indices):
+                    best_coord = coords[idx]
+                    centroids.append((int(best_coord[1]), int(best_coord[0])))
 
-            # self._visualize_frontiers(frontier_mask, centroids)
-
+        # self._visualize_frontiers(frontier_mask, centroids)
         return centroids
 
     def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:

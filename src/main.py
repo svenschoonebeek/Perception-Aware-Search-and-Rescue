@@ -1,7 +1,7 @@
 import logging
 import argparse
 
-from .simulator import Simulator, MapConfig
+from .simulator import Simulator, MapConfig, visualize_grid_gen
 from .agents.mpc import MpcAgent
 from .agents.task_mpc import TaskMpcAgent
 from .agents.random import RandAgent
@@ -34,14 +34,16 @@ def main():
     sim = Simulator(WIDTH, HEIGHT)
     config = MapConfig(num_rooms=7, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=2, min_tunnel_thickness=2
                        , initial_fire_points=0)
-    sim.generate_ground_truth(config,963603403) # 809315671
+    # config = MapConfig(num_rooms=15, num_victims=15, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.05, fire_duration=10, initial_fire_points=0)
+
+    sim.generate_ground_truth(config) # 809315671
 
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
     agent1 = TaskMpcAgent("tasker1", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.05, 0.9, 4, False)
     # agent1 = RandAgent("randy", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
-    sim.add_agent(agent1)
+    sim.add_agent(agent1,)
 
     agent2 = TaskMpcAgent("tasker2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # # agent2 = MpcAgent("tasker2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
@@ -51,6 +53,12 @@ def main():
     # agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # sim.add_agent(agent3)
 
+    # agent4 = TaskMpcAgent("tasker4", 1, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
+    # sim.add_agent(agent4)
+
+    # agent5 = TaskMpcAgent("tasker5", 1, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
+    # sim.add_agent(agent5)
+
     supervisor = Supervisor(WIDTH, HEIGHT, 0.05, 5)
     sim.set_supervisor(supervisor)
 
@@ -59,7 +67,7 @@ def main():
     #                    sim.ground_truth.fire)
 
     logger.info("Running Simulation steps...")
-    history = sim.run(400)
+    history = sim.run(50)
 
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)

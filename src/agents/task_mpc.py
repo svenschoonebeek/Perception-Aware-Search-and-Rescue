@@ -20,14 +20,13 @@ class TaskMpcAgent(MpcAgent):
         self.current_path: list[tuple[int, int]] = []
         
         self.conflict_timeout = 0
-        self.impatience_counter = 0
     
     def copy(self) -> Self:
         copy = super().copy()
 
         copy.current_path = list(self.current_path)
         copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
-        copy.impatience_counter = self.impatience_counter
+        copy.conflict_timeout = self.conflict_timeout
 
         return copy
 
@@ -80,7 +79,7 @@ class TaskMpcAgent(MpcAgent):
                 supervisor.trigger_event(InterventionEvent(
                     priority=EventPriority.SPATIAL_CONFLICT,
                     description=f"{self.name} detected a spatial conflict locally.",
-                    data={"agent": [self.name]}
+                    data={"agent": self.name}
                     ))
                 self.conflict_timeout = 0
                 return
@@ -110,7 +109,10 @@ class TaskMpcAgent(MpcAgent):
         self.current_task = Task(TaskType.IDLE, -1, -1)
         self.current_path = []
     
-    def _objective(self) -> float:
+    def _objective_terminal(self) -> float:
+        return 0
+    
+    def _objective_stage(self) -> float:
         if (self.current_task.task_type == TaskType.EXPLORE):
             return self._objective_explore()
         
