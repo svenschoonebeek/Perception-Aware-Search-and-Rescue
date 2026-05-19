@@ -53,8 +53,12 @@ class MpcAgent(Agent):
             best_sequence = []
 
             for action in AgentAction:
+                tx, ty = model_state._target_cell(action)
+                if (not(0 <= tx < model_state.world_width and 0 <= ty < model_state.world_height)
+                    or model_state.perception.traversability[ty, tx] == TraversabilityLevel.UNTRAVERSIBLE):
+                    continue
+
                 next_state = model_state._predict_next_state(action, depth)
-                
                 if not next_state._is_feasible((next_state.x, next_state.y)):
                     continue
 
@@ -148,21 +152,20 @@ class MpcAgent(Agent):
         Returns:
         Whether the cell is feasible
         """
-        target_cell_x, target_cell_y = target_cell
-        if (target_cell_x < 0 or target_cell_x >= self.world_width or 
-            target_cell_y < 0 or target_cell_y >= self.world_height): # Out of bounds
+        tx, ty = target_cell
+        if not(0 <= tx < self.world_width and 0 <= ty < self.world_height): # Out of bounds
             return False
 
-        if self.perception.victims[target_cell_y][target_cell_x] == 1: # Hit victim
+        if self.perception.victims[ty][tx] == 1: # Hit victim
             return False
 
         # if self.perception.agents[target_cell_y][target_cell_x] == 1: # Hit agent
         #     return False
         
-        if self.perception.fire.matrix[target_cell_y][target_cell_x] == FireLevel.BURNING: # On fire
+        if self.perception.fire.matrix[ty][tx] == FireLevel.BURNING: # On fire
             return False
         
-        return self.perception.traversability[target_cell_y][target_cell_x] == 0 # Didn't hit wall
+        return self.perception.traversability[ty][tx] == 0 # Didn't hit wall
     
     def _objective_stage(self) -> float:
         """
