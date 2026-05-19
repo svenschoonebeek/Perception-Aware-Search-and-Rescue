@@ -50,7 +50,7 @@ def main():
         'victims_collisions',
         'wait_actions',
         'area_explored',
-        'infeasible_states'
+        'infeasible_states',
         'seed'
         ]
     df_mpc = pd.DataFrame(columns=metrics)
@@ -90,7 +90,7 @@ def main():
 
         sim_tmpc.generate_ground_truth(config, seed)
         sim_tmpc.add_agent(tmpc_instance)
-        
+
         sim_tmpc.run(max_steps)
         outcome = sim_tmpc.metrics.outcome.name
         victims_found = sim_tmpc.metrics.victims_found
