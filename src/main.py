@@ -48,6 +48,7 @@ def main():
         'duration', 
         'wall_collisions', 
         'victims_collisions',
+        'fire_collisions',
         'wait_actions',
         'area_explored',
         'infeasible_states',
@@ -83,10 +84,11 @@ def main():
     #     duration = sim_mpc.metrics.steps_taken
     #     wall_collisions = sim_mpc.metrics.terrain_collisions[mpc_instance]
     #     victim_collisions = sim_mpc.metrics.victim_collisions[mpc_instance]
+    #     fire_collisions = sim_mpc.metrics.victim_collisions[mpc_instance]
     #     wait_actions = sim_mpc.metrics.wait_actions[mpc_instance]
     #     area_explored = sim_mpc.metrics.area_explored[mpc_instance]
     #     infeasible_states = sim_mpc.metrics.infeasible_states[mpc_instance]
-    #     df_mpc.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, wait_actions, area_explored, infeasible_states, seed]
+    #     df_mpc.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, fire_collisions, wait_actions, area_explored, infeasible_states, seed]
     #     logger.info("MPC run %d complete in %d steps: %s", i + 1, duration, outcome)
 
     #     sim_tmpc.generate_ground_truth(config, seed)
@@ -98,10 +100,11 @@ def main():
     #     duration = sim_tmpc.metrics.steps_taken
     #     wall_collisions = sim_tmpc.metrics.terrain_collisions[tmpc_instance]
     #     victim_collisions = sim_tmpc.metrics.victim_collisions[tmpc_instance]
+    #     fire_collisions = sim_tmpc.metrics.victim_collisions[tmpc_instance]
     #     wait_actions = sim_tmpc.metrics.wait_actions[tmpc_instance]
     #     area_explored = sim_tmpc.metrics.area_explored[tmpc_instance]
     #     infeasible_states = sim_tmpc.metrics.infeasible_states[tmpc_instance]
-    #     df_tmpc.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, wait_actions, area_explored, infeasible_states, seed]
+    #     df_tmpc.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, fire_collisions, wait_actions, area_explored, infeasible_states, seed]
     #     logger.info("TMPC run %d complete in %d steps: %s\n", i + 1, duration, outcome)
     
     # df_mpc.to_csv("saved_runs/data/mpc_results.csv")
