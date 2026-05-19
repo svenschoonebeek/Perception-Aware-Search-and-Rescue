@@ -67,6 +67,7 @@ class Agent:
         copy.scan_falloff = self.scan_falloff
 
         copy.illegal_moves = self.illegal_moves
+        copy.infeasible_states = self.infeasible_states
         copy.move_history = self.move_history.copy()
         copy.explored = np.copy(self.explored)
         copy.discovered = np.copy(self.discovered)

@@ -20,8 +20,8 @@ class MpcAgent(Agent):
         self.discount = 0.9 # Discount factor, nearer moves are more important than later moves
         self.fire_spread_rate = 0.3
 
-        self.frontier_distances: NDArray
-        self.fire_prediction: NDArray
+        self.frontier_distances: NDArray = np.zeros((self.world_height, self.world_width))
+        self.fire_prediction: NDArray = np.zeros((self.world_height, self.world_width))
     
     def copy(self) -> Self:
         copy = super().copy()

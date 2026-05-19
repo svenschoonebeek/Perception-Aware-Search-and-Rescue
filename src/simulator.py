@@ -97,7 +97,7 @@ class Simulator:
 
         for _ in range(steps):
             # Record steps
-            logger.info("Step %d =========================", _)
+            # logger.info("Step %d =========================", _)
             step_result = self.step()
             for i in range(len(step_result)):
                 record[i].append(step_result[i])
@@ -277,14 +277,20 @@ class Simulator:
             intended_x, intended_y = agent.x + dx[direction], agent.y + dy[direction]
             
             # Check for collisions
-            is_wall = self.ground_truth.traversability[intended_y][intended_x] == TraversabilityLevel.UNTRAVERSIBLE
             is_out_of_bounds = not(0 < intended_x < self.width and 0 < intended_y < self.height)
-            if is_wall or is_out_of_bounds:
+            if is_out_of_bounds:
                 self.metrics.record_terrain_collision(agent)
                 continue
+            
+            is_wall = self.ground_truth.traversability[intended_y][intended_x] == TraversabilityLevel.UNTRAVERSIBLE
+            if is_wall:
+                self.metrics.record_terrain_collision(agent)
+                continue
+            
             if self.ground_truth.agents[intended_y][intended_x] == 1:
                 self.metrics.record_inter_agent_collision(agent)
                 continue
+            
             if self.ground_truth.victims[intended_y][intended_x] == VictimPresence.PRESENT:
                 self.metrics.record_victim_collision(agent)
                 continue
@@ -308,7 +314,7 @@ class Simulator:
             config = MapConfig()
         if seed is None:
             seed = (int) (np.random.random() * 1_000_000_000)
-        logger.info(f"Using seed {seed} to generate the map.")
+        # logger.info(f"Using seed {seed} to generate the map.")
         np.random.seed(seed)
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
