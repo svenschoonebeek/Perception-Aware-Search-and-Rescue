@@ -91,14 +91,13 @@ class Supervisor:
         """
         unassigned_tasks: list[Task] = []
         bidding_agent_names = set()
+        extract_frontiers_flag = False
 
         while self.event_queue:
             event = self.event_queue.pop(0)
             if event.priority == EventPriority.SPATIAL_CONFLICT or event.priority == EventPriority.LOW_PROGRESS:
                 bidding_agent_names.update(event.data["agent"])
-                for fx, fy in self._extract_frontiers():
-                    unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy))
-                # self._run_burgard_frontier_auction(conflicting_agents) # TODO remove
+                extract_frontiers_flag = True
             
             elif event.priority == EventPriority.TASK_COMPLETED: # update agent tracker to set completed task to idle
                 completed_agent_name = event.data["agent"]
@@ -106,6 +105,10 @@ class Supervisor:
                 self.agent_tracker[completed_agent_name].task = Task(TaskType.IDLE, -1, -1)
                 # doesn't get added to the task list because it is just an update for the tracker, agents are free to go idle themselves.
         
+        if extract_frontiers_flag:
+            for fx, fy in self._extract_frontiers():
+                unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy))
+
         bidding_agents = [a for a in agents if a.name in bidding_agent_names]
         self._run_task_auction(unassigned_tasks, bidding_agents)
 
@@ -251,7 +254,9 @@ class Supervisor:
                 
                 if 0 <= nx < self.width and 0 <= ny < self.height:
                     if (nx, ny) not in seen:
-                        if self.shared_belief.traversability[ny][nx] != TraversabilityLevel.UNTRAVERSABLE:
+                        traversability = self.shared_belief.traversability[ny][nx]
+                        victim_presence = self.shared_belief.victims[ny][nx]
+                        if  traversability != TraversabilityLevel.UNTRAVERSABLE and victim_presence != VictimPresence.PRESENT:
                             seen.add((nx, ny))
                             queue.append(path + [(nx, ny)])
                             

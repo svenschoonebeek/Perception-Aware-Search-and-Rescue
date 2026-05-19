@@ -1,10 +1,13 @@
 from typing import Self
 import numpy as np
+import logging
 
 from .mpc import MpcAgent
 from src.state import State
 from src.constants import *
 from src.supervisor import Supervisor
+
+logger = logging.getLogger(__name__)
 
 class TaskMpcAgent(MpcAgent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
@@ -73,6 +76,7 @@ class TaskMpcAgent(MpcAgent):
             
             distance = np.sqrt((self.x - x)**2 + (self.y - y)**2)
             if distance < conflict_distance:
+                logger.debug(f"{self.name} detected a spatial conflict with another agent.")
                 supervisor.trigger_event(InterventionEvent(
                     priority=EventPriority.SPATIAL_CONFLICT,
                     description=f"{self.name} detected a spatial conflict locally.",

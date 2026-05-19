@@ -32,7 +32,7 @@ def main():
     sim = Simulator(WIDTH, HEIGHT)
     config = MapConfig(num_rooms=7, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=2, min_tunnel_thickness=2
                        , initial_fire_points=0)
-    sim.generate_ground_truth(config) # 809315671
+    sim.generate_ground_truth(config,963603403) # 809315671
 
     # Saved seeds: 182840517 (181 steps); 
 
@@ -57,7 +57,7 @@ def main():
     #                    sim.ground_truth.fire)
 
     logger.info("Running Simulation steps...")
-    history = sim.run(40)
+    history = sim.run(400)
 
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)
