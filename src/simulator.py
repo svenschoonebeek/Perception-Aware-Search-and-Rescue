@@ -39,6 +39,9 @@ class Simulator:
         Parameters:
         agent: The agent to add
         """
+        if any(a.name == agent.name for a in self.agents):
+            raise ValueError(f"Agent with name {agent.name} already exists in the simulation.")
+        
         self.agents.append(agent)
         self.ground_truth.agents[agent.y][agent.x] = 1
         self.metrics.register_agent(agent)

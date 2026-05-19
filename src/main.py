@@ -11,8 +11,8 @@ from .supervisor import Supervisor
 
 import matplotlib.pyplot as plt
 
-WIDTH = 35
-HEIGHT = 35
+WIDTH = 50
+HEIGHT = 50
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,9 @@ def main():
     setup_logging(args.debug)
 
     sim = Simulator(WIDTH, HEIGHT)
-    config = MapConfig(num_rooms=7, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=2, min_tunnel_thickness=2
-                       , initial_fire_points=0)
-    # config = MapConfig(num_rooms=15, num_victims=15, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.05, fire_duration=10, initial_fire_points=0)
+    # config = MapConfig(num_rooms=7, num_victims=5, min_room_length=4, min_room_width=4, max_room_length=10, max_room_width=10, max_tunnel_thickness=2, min_tunnel_thickness=2
+    #                    , initial_fire_points=0)
+    config = MapConfig(num_rooms=10, num_victims=10, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.02, fire_duration=100, initial_fire_points=1)
 
     sim.generate_ground_truth(config) # 809315671
 
@@ -59,7 +59,7 @@ def main():
     # agent5 = TaskMpcAgent("tasker5", 1, 1, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # sim.add_agent(agent5)
 
-    supervisor = Supervisor(WIDTH, HEIGHT, 0.05, 5)
+    supervisor = Supervisor(WIDTH, HEIGHT, 0.05, 8)
     sim.set_supervisor(supervisor)
 
     # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, 
@@ -67,7 +67,7 @@ def main():
     #                    sim.ground_truth.fire)
 
     logger.info("Running Simulation steps...")
-    history = sim.run(50)
+    history = sim.run(200)
 
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)
