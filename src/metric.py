@@ -55,6 +55,7 @@ class Metric:
         self.terrain_collisions[agent] = 0
         self.victim_collisions[agent] = 0
         self.inter_agent_collisions[agent] = 0
+        self.fire_collisions[agent] = 0
         self.wait_actions[agent] = 0
         self.damage[agent] = 0
         self.area_explored[agent] = 0.0
