@@ -1,7 +1,7 @@
 import logging
 import argparse
 
-from .simulator import Simulator, MapConfig, visualize_grid_gen
+from .simulator import Simulator, MapConfig
 from .agents.mpc import MpcAgent
 from .agents.task_mpc import TaskMpcAgent
 from .agents.random import RandAgent
@@ -9,8 +9,10 @@ from .agent import Agent
 from .visualization import Visualizer
 from .supervisor import Supervisor
 
-WIDTH = 40
-HEIGHT = 40
+import matplotlib.pyplot as plt
+
+WIDTH = 35
+HEIGHT = 35
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ def main():
                        , initial_fire_points=0)
     sim.generate_ground_truth(config,963603403) # 809315671
 
-    # Saved seeds: 182840517 (181 steps); 
+    # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
     agent1 = TaskMpcAgent("tasker1", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 3, False)
     # agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.05, 0.9, 4, False)

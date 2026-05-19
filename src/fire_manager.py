@@ -1,8 +1,7 @@
 import numpy as np
-import random
 
 from .state import State
-from .constants import *
+from .constants import FireLevel, TraversabilityLevel, VictimPresence
 
 class FireManager:
     def __init__(

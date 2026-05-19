@@ -123,26 +123,26 @@ class TaskMpcAgent(MpcAgent):
         Returns:
         The objective value
         """
-        w_exploration, w_safety, w_confidence = 100, 20, 1 # To be adjusted
+        w_discovery, w_safety, w_confidence = 100, 10, 3 # To be adjusted
 
-        exploration =  w_exploration * self._exploration_score()
+        discovery   =  w_discovery * self._discovery_score()
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
 
-        # print("Exploration:", exploration, "Safety:", safety, "Confidence:", confidence)
+        # print("Discovery:", discovery, "Safety:", safety, "Confidence:", confidence)
 
-        return exploration + safety + confidence
+        return discovery + safety + confidence
     
     def _objective_explore(self) -> float:
         """
         Goes to a certain objective tile (e.g. a frontier) and then switches to wander mode
         """
-        w_exploration, w_safety, w_confidence, w_path = 100, 20, 1, 100 # To be adjusted
+        w_discovery, w_safety, w_confidence, w_path = 100, 20, 1, 100 # To be adjusted
 
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
-        # TODO maybe here we also do exploration? such that it explores on the way
-        # exploration =  w_exploration * self._exploration_score()
+        # TODO maybe here we also do discovery? such that it explores on the way
+        # discovery =  w_discovery * self._discovery_score()
 
         # carrot_x, carrot_y = self.get_carrot_waypoint()
         # carrot_distance = np.linalg.norm(np.array([carrot_y, carrot_x]) - np.array([self.y, self.x]))

@@ -43,6 +43,9 @@ class Metric:
         self.area_explored: dict[Agent, float] = {}
         self.total_traversable: int = 0
 
+        # Number of times each agent has reached a state defined as "infeasible" by its controller
+        self.infeasible_states: dict[Agent, int] = {}
+
         # per time step history of all the metrics
         self.history: list[MetricInTime] = []
 

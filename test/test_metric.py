@@ -190,14 +190,15 @@ class TestAreaExplored(unittest.TestCase):
         self.assertAlmostEqual(sim.metrics.area_explored[a], 1 / 9)
 
     def test_walking_increases_coverage(self):
-        # Movement happens before scan, so the starting cell is never observed.
-        # After 2 right-steps from (0,0): scans at (1,0) then (2,0). 2/3 covered.
-        sim = Simulator(3, 1)
-        a = _make_agent("a", 0, 0, 3, 1, AgentAction.MOVE_RIGHT, scan_radius=0)
+        # Initial scan -> move, scan -> move, scan
+        # Initially scans at (0,0)
+        # After 2 right-steps from (0,0): scans at (1,0) then (2,0). 3/4 covered.
+        sim = Simulator(4, 1)
+        a = _make_agent("a", 0, 0, 4, 1, AgentAction.MOVE_RIGHT, scan_radius=0)
         sim.add_agent(a)
         sim.run(2)
 
-        self.assertAlmostEqual(sim.metrics.area_explored[a], 2 / 3)
+        self.assertAlmostEqual(sim.metrics.area_explored[a], 3 / 4)
 
     def test_walls_excluded_from_denominator(self):
         sim = Simulator(3, 3)

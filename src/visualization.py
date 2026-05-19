@@ -367,7 +367,7 @@ class Visualizer:
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    pygame.quit(); sys.exit()
+                    pygame.quit(); return
                 
                 # Checkbox events
                 for cb in self.checkboxes:
