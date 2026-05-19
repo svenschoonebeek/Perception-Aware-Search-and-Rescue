@@ -102,7 +102,7 @@ def main():
         logger.info("TMPC run %d complete in %d steps: %s\n", i + 1, duration, outcome)
     
     df_mpc.to_csv("mpc_results.csv")
-    df_mpc.to_csv("tmpc_results.csv")
+    df_tmpc.to_csv("tmpc_results.csv")
 
 
 if __name__ == "__main__":
