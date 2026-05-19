@@ -110,7 +110,7 @@ def main():
     # * TEST SEED
     sim_tmpc = Simulator(WIDTH, HEIGHT)
 
-    sim_tmpc.generate_ground_truth(config, 628099187)
+    sim_tmpc.generate_ground_truth(config, 179742288)
     sim_tmpc.add_agent(tmpc)
     history = sim_tmpc.run(max_steps)
 
