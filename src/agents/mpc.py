@@ -155,9 +155,6 @@ class MpcAgent(Agent):
         if self.perception.victims[target_cell_y][target_cell_x] == 1: # Hit victim
             return False
 
-        # if self.perception.agents[target_cell_y][target_cell_x] == 1: # Hit agent
-        #     return False
-        
         if self.perception.fire.matrix[target_cell_y][target_cell_x] == FireLevel.BURNING: # On fire
             return False
         
