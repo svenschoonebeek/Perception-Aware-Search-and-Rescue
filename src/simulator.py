@@ -61,7 +61,6 @@ class Simulator:
             self.metrics.record_snapshot()  # capture initial metric state
 
         intents = self._collect_intents()
-        logger.debug(f"Intents: {{ {', '.join(f'{agent.name}: {intents[agent]}' for agent in self.agents)} }}")
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
 
@@ -87,6 +86,7 @@ class Simulator:
             self.supervisor.update_belief(agent_scans)
             self.supervisor.check_for_impatience()
             self.supervisor.check_for_victims()
+            self.supervisor.check_explore_tasks()
 
             if self.supervisor.requires_intervention():
                 self.supervisor.resolve_events(self.agents)
@@ -315,7 +315,7 @@ class Simulator:
             intended_x, intended_y = agent.x + dx[direction], agent.y + dy[direction]
             
             # Check for collisions
-            is_out_of_bounds = not(0 < intended_x < self.width and 0 < intended_y < self.height)
+            is_out_of_bounds = not(0 <= intended_x < self.width and 0 <= intended_y < self.height)
             if is_out_of_bounds:
                 self.metrics.record_terrain_collision(agent)
                 continue

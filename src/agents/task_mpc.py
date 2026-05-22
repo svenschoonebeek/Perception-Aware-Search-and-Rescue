@@ -54,13 +54,58 @@ class TaskMpcAgent(MpcAgent):
             return
         
         if self.current_task.task_type == TaskType.EXPLORE:
+            path_valid = self._check_path_blocked(supervisor)
+            if not path_valid:
+                return
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
-            if distance_to_target < self.scan_radius / 2.0:
-                self._return_to_idle(supervisor)
+            if distance_to_target <= 1.0:
+                self._return_to_idle()
+                supervisor.trigger_event(InterventionEvent(
+                    priority=EventPriority.TASK_COMPLETED,
+                    description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
+                    data={"agent": self.name}
+                ))
         
         self.conflict_timeout += 1
         if (self.conflict_timeout >= 3):
             self._check_for_spatial_conflict(supervisor, state)
+
+    def _check_path_blocked(self, supervisor: Supervisor):
+        """
+        Updates the path of the agent by removing already passed nodes and checks whether the path is blocked by a new obstacle/hazard.
+        If it is, it returns to idle and triggers an event for the supervisor.
+        """
+        if len(self.current_path) > 0:
+            min_dist = float('inf')
+            closest_idx = 0
+            
+            for i, (px, py) in enumerate(self.current_path):
+                dist = np.sqrt((px - self.x)**2 + (py - self.y)**2)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_idx = i
+                    
+            # remove nodes the agent has already passed
+            self.current_path = self.current_path[closest_idx:]
+
+        if len(self.current_path) > 0:
+            path_blocked = False
+            for px, py in self.current_path[:5]: 
+                if int(px) == self.x and int(py) == self.y:
+                    continue
+
+                if not self._is_feasible((px, py)):
+                    logger.debug(f"Agent {self.name} detected an obstacle/hazard on its upcoming path at ({px}, {py})! Requesting new task/path.")
+                    path_blocked = True
+                    break
+                    
+            if path_blocked:
+                self._return_to_idle() 
+                supervisor.trigger_event(InterventionEvent(priority=EventPriority.PATH_BLOCKED, 
+                                                        description=f"{self.name} detected a blocked path.",
+                                                        data={"agent": self.name}))
+                return False
+        return True
 
     def _check_for_spatial_conflict(self, supervisor: Supervisor, state: State):
         conflict_distance = self.scan_radius # could change this to be smaller
@@ -84,28 +129,10 @@ class TaskMpcAgent(MpcAgent):
                 self.conflict_timeout = 0
                 return
     
-    def _is_path_blocked(self) -> bool:
-        """
-        Checks if the currently planned path contains any newly discovered walls or fires.
-        """
-        for x, y in self.current_path:
-            if self.perception.traversability[y][x] == TraversabilityLevel.UNTRAVERSABLE:
-                return True
-            #? should count fire as blocking?
-            # if self.perception.fire[y][x] == FireLevel.BURNING:
-            #     return True
-                
-        return False
-    
-    def _return_to_idle(self, supervisor: Supervisor) -> None:
+    def _return_to_idle(self) -> None:
         """
         Helper function to return to idle state after completing a task
         """
-        supervisor.trigger_event(InterventionEvent(
-            priority=EventPriority.TASK_COMPLETED,
-            description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
-            data={"agent": self.name}
-        ))
         self.current_task = Task(TaskType.IDLE, -1, -1)
         self.current_path = []
     
@@ -139,12 +166,12 @@ class TaskMpcAgent(MpcAgent):
         """
         Goes to a certain objective tile (e.g. a frontier) and then switches to wander mode
         """
-        w_discovery, w_safety, w_confidence, w_path = 100, 20, 1, 100 # To be adjusted
+        w_discovery, w_safety, w_confidence, w_path = 10, 20, 1, 100 # To be adjusted
 
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
         # TODO maybe here we also do discovery? such that it explores on the way
-        # discovery =  w_discovery * self._discovery_score()
+        discovery =  w_discovery * self._discovery_score()
 
         # carrot_x, carrot_y = self.get_carrot_waypoint()
         # carrot_distance = np.linalg.norm(np.array([carrot_y, carrot_x]) - np.array([self.y, self.x]))
@@ -154,7 +181,7 @@ class TaskMpcAgent(MpcAgent):
 
         # print("path_score:", path_score, "Safety:", safety, "Confidence:", confidence)
 
-        return safety + confidence + path_score # + exploration
+        return safety + confidence + path_score + discovery
     
     def _calculate_path_score(self) -> float:
         """

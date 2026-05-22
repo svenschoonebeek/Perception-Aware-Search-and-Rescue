@@ -51,12 +51,12 @@ class Supervisor:
 
         for scan in agent_scans:
             if scan.agent_name not in self.agent_tracker:
-                self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE, -1, -1), 0)
+                self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE), 0)
             else:
                 self.agent_tracker[scan.agent_name].x = scan.agent_x
                 self.agent_tracker[scan.agent_name].y = scan.agent_y
 
-            if np.all(self.global_explored[scan.ys, scan.xs]):
+            if np.all(self.global_explored[scan.ys, scan.xs]) and self.agent_tracker[scan.agent_name].task.task_type == TaskType.IDLE:
                 self.agent_tracker[scan.agent_name].impatience += 1
             else:
                 self.agent_tracker[scan.agent_name].impatience = 0
@@ -85,6 +85,27 @@ class Supervisor:
                 ))
                 self.agent_tracker[agent_name].impatience = 0 
 
+    def check_explore_tasks(self) -> None:
+        for agent_name, agent_info in self.agent_tracker.items():
+            if agent_info.task.task_type == TaskType.EXPLORE:
+                tx, ty = int(agent_info.task.x), int(agent_info.task.y)
+                    
+                window_size = 1 # 3x3 window around target
+                
+                y_min = max(0, ty - window_size)
+                y_max = min(self.global_explored.shape[0], ty + window_size + 1)
+                x_min = max(0, tx - window_size)
+                x_max = min(self.global_explored.shape[1], tx + window_size + 1)
+                
+                target_neighborhood = self.global_explored[y_min:y_max, x_min:x_max]
+                if np.all(target_neighborhood):
+                    logger.debug(f"Target at ({tx}, {ty}) has been reached. Triggering task completion.")
+                    self.trigger_event(InterventionEvent(
+                        priority=EventPriority.TASK_COMPLETED,
+                        description=f"Exploration task at ({tx}, {ty}) was completed.",
+                        data={"agent": agent_name}
+                    ))
+
     def check_for_victims(self) -> None:
         pass
 
@@ -107,19 +128,27 @@ class Supervisor:
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
             
-            elif event.priority == EventPriority.TASK_COMPLETED: # update agent tracker to set completed task to idle
+            elif event.priority == EventPriority.PATH_BLOCKED:
+                bidding_agent_names.add(event.data["agent"])
+                extract_frontiers_flag = True
+            
+            elif event.priority == EventPriority.TASK_COMPLETED: # if agent sets itsself to idle, or supervisor detects an explore task is completed
                 completed_agent_name = event.data["agent"]
                 logger.debug(f"Agent {completed_agent_name} completed a task")
-                self.agent_tracker[completed_agent_name].task = Task(TaskType.IDLE, -1, -1)
-                # doesn't get added to the task list because it is just an update for the tracker, agents are free to go idle themselves.
+                self._set_agent_task(next(a for a in agents if a.name == completed_agent_name), Task(TaskType.IDLE), [])
+                # doesn't get added to the task list because it is just an update for the tracker or agent
         
         if extract_frontiers_flag:
-            for fx, fy in self._extract_frontiers():
-                unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy))
+            for fx, fy, fweight in self._extract_frontiers():
+                unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy, fweight))
 
         bidding_agents = [a for a in agents if a.name in bidding_agent_names]
         self._run_task_auction(unassigned_tasks, bidding_agents)
 
+    def _set_agent_task(self, agent: Agent, task: Task, path: list[tuple[int, int]]) -> None:
+        agent.set_current_task(task)
+        agent.set_current_path(path)
+        self.agent_tracker[agent.name].task = task
 
     def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent]) -> None:
         if not unassigned_tasks or not bidding_agents:
@@ -129,15 +158,9 @@ class Supervisor:
         available_agents = list(bidding_agents)
         claimed_tasks: list[Task] = []
 
-        bidding_agent_names = {agent.name for agent in bidding_agents}
-        other_agent_info = {
-            name: info for name, info in self.agent_tracker.items() 
-            if name not in bidding_agent_names
-        }
-
-        # weights for burgards spatial exclusivity, being assigned close to an existing target and close to an idle agent, respectively
-        w_spatial_claimed, w_close_to_target, w_close_to_agent = 500.0, 300.0, 150.0
-        explore_base_reward = 100.0
+        # weights for burgards spatial exclusivity(being assigned close to an existing target), and close to an idle agent, respectively
+        w_close_to_target, w_close_to_agent = 500, 500
+        explore_reward_per_tile = 25.0
 
         while unassigned_tasks and bidding_agents:
             best_task = None
@@ -147,15 +170,15 @@ class Supervisor:
             for task in unassigned_tasks:
                 # base reward
                 if task.task_type == TaskType.EXPLORE:
-                    base_reward = explore_base_reward
+                    base_reward = task.weight * explore_reward_per_tile
+                    # base_reward = 100.0
                 
                 burgard_penalty = 0.0
-                for claimed_t in claimed_tasks:
-                    if claimed_t.task_type == TaskType.EXPLORE:
-                        distance = np.sqrt((task.x - claimed_t.x)**2 + (task.y - claimed_t.y)**2)
-                        burgard_penalty += w_spatial_claimed * np.exp(-distance)
                 
-                for agent_info in other_agent_info.values():
+                for agent_name, agent_info in self.agent_tracker.items():
+                    if any(a.name == agent_name for a in available_agents):
+                        continue
+
                     if agent_info.task.task_type == TaskType.EXPLORE:
                         task_location = (agent_info.task.x, agent_info.task.y)
                         distance_to_task = np.sqrt((task.x - task_location[0])**2 + (task.y - task_location[1])**2)
@@ -167,9 +190,10 @@ class Supervisor:
                 
                 # evaulate each bidding agent against this task
                 for agent in available_agents:
-                    travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
+                    # travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
+                    travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
                     total_utility = base_reward - travel_cost - burgard_penalty
-
+                    # logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}]")
                     if total_utility > highest_utility:
                         highest_utility = total_utility
                         best_task = task
@@ -177,21 +201,18 @@ class Supervisor:
             if not best_task or not winning_agent:
                 break
             
-            winning_agent.set_current_task(best_task)
-            winning_agent.set_current_path(self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y))
-
-            self.agent_tracker[winning_agent.name].task = best_task
+            best_path = self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y)
+            self._set_agent_task(winning_agent, best_task, best_path)
             logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
-            
+            logger.debug(f"Assigned path {best_path}")
             claimed_tasks.append(best_task)
             unassigned_tasks.remove(best_task)
             available_agents.remove(winning_agent)
 
         for agent in available_agents:
             logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")
-            agent.set_current_task(Task(TaskType.IDLE, -1, -1))
-            agent.set_current_path([])
-    
+            self._set_agent_task(agent, Task(TaskType.IDLE), [])
+
     def _extract_frontiers(self) -> list:
         explored = np.array(self.global_explored, dtype=bool)
         traversable = self.shared_belief.traversability.matrix == TraversabilityLevel.TRAVERSABLE
@@ -211,22 +232,25 @@ class Supervisor:
             label(frontier_mask, structure=grouping_structure)
             )
         
-        centroids = []
-        tiles_per_target = 4 # how many frontier tiles should be in a cluster
+        weighted_centroids = []
+        tiles_per_split = 4 # any cluster with a multiple of this will be split into multiple targets
 
         for i in range(1, num_regions_raw + 1):
             coords = np.argwhere(labeled_mask == i)
             
             if len(coords) == 0:
                 continue
-            num_targets = max(1, len(coords) // tiles_per_target)
-            
+            num_targets = max(1, len(coords) // tiles_per_split)
+            raw_eig = len(coords) / num_targets 
+            # clip the info gain to the split, such that larger clusters don't get disproportionately high weights
+            expected_info_gain = min(float(tiles_per_split), raw_eig)
+
             if num_targets == 1:
                 # Standard mean for small regions
                 mean_coord = coords.mean(axis=0)
                 distances = cdist([mean_coord], coords)
                 best_coord = coords[np.argmin(distances)]
-                centroids.append((int(best_coord[1]), int(best_coord[0])))
+                weighted_centroids.append((int(best_coord[1]), int(best_coord[0]), expected_info_gain))
             else:
                 cluster_centers, _ = kmeans(coords.astype(float), num_targets)
                 distances = cdist(cluster_centers, coords)
@@ -235,10 +259,10 @@ class Supervisor:
                 
                 for idx in np.unique(closest_indices):
                     best_coord = coords[idx]
-                    centroids.append((int(best_coord[1]), int(best_coord[0])))
+                    weighted_centroids.append((int(best_coord[1]), int(best_coord[0]), expected_info_gain))
 
-        # self._visualize_frontiers(frontier_mask, centroids)
-        return centroids
+        # self._visualize_frontiers(frontier_mask, weighted_centroids)
+        return weighted_centroids
 
     def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
         """
@@ -279,7 +303,7 @@ class Supervisor:
                             
         return []
 
-    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int]]) -> None:        
+    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int, int]]) -> None:        
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -287,9 +311,9 @@ class Supervisor:
         display[self.global_explored] = [200, 200, 200]      # explored = light grey
         display[frontier_mask] = [50, 200, 50]               # frontier cells = green
         ax.imshow(display, origin='upper')
-        for col, row in centroids:
+        for col, row, weight in centroids:
             ax.plot(col, row, 'r*', markersize=12)
-            ax.annotate(f"({col},{row})", (col, row), textcoords="offset points",
+            ax.annotate(f"({col},{row})\nw={weight:.1f}", (col, row), textcoords="offset points",
                         xytext=(4, 4), color='red', fontsize=8)
         ax.set_title(f"Frontiers ({len(centroids)} clusters)")
         ax.set_xlabel("x"); ax.set_ylabel("y")

@@ -60,8 +60,9 @@ class TaskType(Enum):
 @dataclass
 class Task:
     task_type: TaskType
-    x: int
-    y: int
+    x: int = -1
+    y: int = -1
+    weight: float = 1.0
 
 @dataclass
 class AgentInfo:

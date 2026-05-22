@@ -5,7 +5,7 @@ from typing import Self
 from scipy.ndimage import binary_dilation
 
 from src.agent import Agent
-from src.constants import AgentAction, FireLevel, TraversabilityLevel
+from src.constants import AgentAction, AgentPresence, FireLevel, TraversabilityLevel, VictimPresence
 
 logger = logging.getLogger(__name__)
 
@@ -152,16 +152,16 @@ class MpcAgent(Agent):
             target_cell_y < 0 or target_cell_y >= self.world_height): # Out of bounds
             return False
 
-        if self.perception.victims[target_cell_y][target_cell_x] == 1: # Hit victim
+        if self.perception.victims[target_cell_y][target_cell_x] == VictimPresence.PRESENT: # Hit victim
             return False
 
         if self.perception.fire.matrix[target_cell_y][target_cell_x] == FireLevel.BURNING: # On fire
             return False
         
-        if self.perception.agents[target_cell_y][target_cell_x] == 1:
+        if self.perception.agents[target_cell_y][target_cell_x] == AgentPresence.PRESENT: # Another agent is there
             return False
         
-        return self.perception.traversability[target_cell_y][target_cell_x] == 0 # Didn't hit wall
+        return self.perception.traversability[target_cell_y][target_cell_x] == TraversabilityLevel.TRAVERSABLE # Didn't hit wall
     
     def _objective_stage(self) -> float:
         """
