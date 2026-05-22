@@ -86,7 +86,7 @@ class Simulator:
             self.supervisor.update_belief(agent_scans)
             self.supervisor.check_for_impatience()
             self.supervisor.check_for_victims()
-            self.supervisor.check_explore_tasks()
+            # self.supervisor.check_explore_tasks()
 
             if self.supervisor.requires_intervention():
                 self.supervisor.resolve_events(self.agents)

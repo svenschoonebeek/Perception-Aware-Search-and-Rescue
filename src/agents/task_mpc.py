@@ -137,7 +137,13 @@ class TaskMpcAgent(MpcAgent):
         self.current_path = []
     
     def _objective_terminal(self) -> float:
-        return 0
+        if (self.current_task.task_type == TaskType.EXPLORE):
+            return 0
+        
+        w_exploration = 300
+        exploration = -w_exploration * self._exploration_penalty()
+
+        return exploration * self.horizon
     
     def _objective_stage(self) -> float:
         if (self.current_task.task_type == TaskType.EXPLORE):
@@ -172,10 +178,6 @@ class TaskMpcAgent(MpcAgent):
         confidence  =  w_confidence * self._confidence_score()
         # TODO maybe here we also do discovery? such that it explores on the way
         discovery =  w_discovery * self._discovery_score()
-
-        # carrot_x, carrot_y = self.get_carrot_waypoint()
-        # carrot_distance = np.linalg.norm(np.array([carrot_y, carrot_x]) - np.array([self.y, self.x]))
-        # path_score = w_path * float(1.0 / (1.0 + carrot_distance))
 
         path_score = w_path * self._calculate_path_score()
 
