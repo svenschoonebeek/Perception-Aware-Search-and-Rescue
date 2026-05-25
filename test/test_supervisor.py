@@ -49,7 +49,7 @@ class SupervisorTest(unittest.TestCase):
         ])
         
         frontiers = self.supervisor._extract_frontiers()
-        expected_frontiers = [(3, 2)]
+        expected_frontiers = [(3, 2, 3.0, -1)]
 
         self.assertEqual(set(frontiers), set(expected_frontiers), 
                         f"Expected frontiers {expected_frontiers}, but got {frontiers}")
@@ -84,7 +84,7 @@ class SupervisorTest(unittest.TestCase):
         frontiers = self.supervisor._extract_frontiers()
         
         # Expected: (3, 2) is the north exit (x=3, y=2), (4, 4) is the east exit (x=4, y=4).
-        expected_frontiers = [(3, 2), (4, 4)]
+        expected_frontiers = [(3, 2, 1.0, -1), (4, 4, 1.0, -1)]
         
         self.assertEqual(set(frontiers), set(expected_frontiers), 
                         f"Expected {expected_frontiers}, but got {frontiers}")
@@ -118,8 +118,8 @@ class SupervisorTest(unittest.TestCase):
         
         frontiers = self.supervisor._extract_frontiers()
         
-        # Expected: (3, 1) is the north exit (x=3, y=1), (5, 4) is the east exit (x=5, y=4).
-        expected_frontiers = [(3, 1), (5, 4)]
+        # Expected: (3, 1) is the north exit (x=3, y=1), (5, 4) is the east exit (x=5, y=4). both weight 1
+        expected_frontiers = [(3, 1, 1.0, -1), (5, 4, 1.0, -1)]
         
         self.assertEqual(set(frontiers), set(expected_frontiers), 
                         f"Expected {expected_frontiers}, but got {frontiers}")

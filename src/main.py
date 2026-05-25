@@ -37,7 +37,7 @@ def main():
                        , initial_fire_points=0, room_vulnerability_probability=0.1)
     # config = MapConfig(num_rooms=12, num_victims=10, room_vulnerability_probability=0.1, room_vulnerability_severity=0.2, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.02, fire_duration=100, initial_fire_points=0)
 
-    sim.generate_ground_truth(config,806654057) # 281871615 224833043 48617497
+    sim.generate_ground_truth(config,1234567896) # 281871615 224833043 48617497
 
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
@@ -63,7 +63,22 @@ def main():
     logger.info("Running Simulation steps...")
     history = sim.run(200)
 
-  
+    average_overlap = 0
+    for i in range(0, len(sim.agents)):
+        for j in range(i+1, len(sim.agents)):
+            agent_i = sim.agents[i]
+            agent_j = sim.agents[j]
+            agent_i_explored = agent_i.explored
+            agent_j_explored = agent_j.explored
+            overlap = np.sum(np.logical_and(agent_i_explored, agent_j_explored))
+            agent_i_percentage_overlap = overlap / agent_i_explored.sum()
+            agent_j_percentage_overlap = overlap / agent_j_explored.sum()
+            logger.info(f"Overlap in explored area between {agent_i.name} and {agent_j.name}: {overlap} cells")
+            logger.info(f"Percentage overlap - {agent_i.name}: {agent_i_percentage_overlap:.2%}, {agent_j.name}: {agent_j_percentage_overlap:.2%}")
+            average_overlap += (agent_i_percentage_overlap + agent_j_percentage_overlap) / 2 / (len(sim.agents))
+
+    logger.info(f"Average overlap: {average_overlap}")
+    logger.info(f"Total explored cells: {np.sum(supervisor.global_explored.sum())}")
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)
     # viz = Visualizer.from_file('saved_runs\\private\\stuck_at_vulnerable.pkl', 800, 800)

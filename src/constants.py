@@ -63,6 +63,7 @@ class Task:
     x: int = -1
     y: int = -1
     weight: float = 1.0
+    room_id: int = -1
 
 @dataclass
 class AgentInfo:

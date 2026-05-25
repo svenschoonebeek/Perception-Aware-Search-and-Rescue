@@ -7,9 +7,10 @@ import logging
 from .agent import Agent
 from .state import State
 from .constants import *
-from scipy.ndimage import binary_dilation, label
+from scipy.ndimage import binary_dilation, distance_transform_edt, label
 from scipy.spatial.distance import cdist
 from scipy.cluster.vq import kmeans
+from skimage.morphology import skeletonize
 
 if TYPE_CHECKING:
     from src.agent import Agent
@@ -34,7 +35,10 @@ class Supervisor:
         """
         Checks if there are any events in the queue that require intervention
         """
-        return len(self.event_queue) > 0
+        has_critical_event = any(e.priority == EventPriority.CRITICAL_VICTIM_FOUND for e in self.event_queue)
+        if has_critical_event:
+            return True
+        return len(self.event_queue) >= 2
     
     def trigger_event(self, event: InterventionEvent) -> None:
         """
@@ -86,25 +90,21 @@ class Supervisor:
                 self.agent_tracker[agent_name].impatience = 0 
 
     def check_explore_tasks(self) -> None:
-        for agent_name, agent_info in self.agent_tracker.items():
-            if agent_info.task.task_type == TaskType.EXPLORE:
-                tx, ty = int(agent_info.task.x), int(agent_info.task.y)
-                    
-                window_size = 1 # 3x3 window around target
-                
-                y_min = max(0, ty - window_size)
-                y_max = min(self.global_explored.shape[0], ty + window_size + 1)
-                x_min = max(0, tx - window_size)
-                x_max = min(self.global_explored.shape[1], tx + window_size + 1)
-                
-                target_neighborhood = self.global_explored[y_min:y_max, x_min:x_max]
-                if np.all(target_neighborhood):
-                    logger.debug(f"Target at ({tx}, {ty}) has been reached. Triggering task completion.")
-                    self.trigger_event(InterventionEvent(
-                        priority=EventPriority.TASK_COMPLETED,
-                        description=f"Exploration task at ({tx}, {ty}) was completed.",
-                        data={"agent": agent_name}
-                    ))
+        for target_agent_name, target_agent_info in self.agent_tracker.items():
+            if target_agent_info.task.task_type == TaskType.EXPLORE:
+                tx, ty = target_agent_info.task.x, target_agent_info.task.y
+                for checking_agent_name, checking_agent_info in self.agent_tracker.items():
+                    ax, ay = checking_agent_info.x, checking_agent_info.y
+                    distance = np.sqrt((ax - tx)**2 + (ay - ty)**2)
+                    if distance <= 1.0:
+                        if target_agent_name != checking_agent_name:
+                            logger.debug(f"Target at ({tx}, {ty}) for {target_agent_name} was cleared by passing agent {checking_agent_name}.")
+                            self.trigger_event(InterventionEvent(
+                                priority=EventPriority.TASK_COMPLETED,
+                                description=f"Exploration task at ({tx}, {ty}) was cleared by {checking_agent_name}.",
+                                data={"agent": target_agent_name}
+                            ))
+                        break
 
     def check_for_victims(self) -> None:
         pass
@@ -139,8 +139,10 @@ class Supervisor:
                 # doesn't get added to the task list because it is just an update for the tracker or agent
         
         if extract_frontiers_flag:
-            for fx, fy, fweight in self._extract_frontiers():
-                unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy, fweight))
+            # frontiers = self._extract_frontiers()
+            frontiers = self._create_voronoi_partition()
+            for fx, fy, fweight, froom_id in frontiers:
+                unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy, fweight, froom_id))
 
         bidding_agents = [a for a in agents if a.name in bidding_agent_names]
         self._run_task_auction(unassigned_tasks, bidding_agents)
@@ -157,9 +159,10 @@ class Supervisor:
 
         available_agents = list(bidding_agents)
         claimed_tasks: list[Task] = []
+        claimed_rooms = set()
 
-        # weights for burgards spatial exclusivity(being assigned close to an existing target), and close to an idle agent, respectively
-        w_close_to_target, w_close_to_agent = 500, 500
+        # weights for room lock, burgards spatial exclusivity, and close to an idle agent, respectively
+        w_room_penalty, w_close_to_target, w_close_to_agent = 10000, 500, 500
         explore_reward_per_tile = 25.0
 
         while unassigned_tasks and bidding_agents:
@@ -190,10 +193,15 @@ class Supervisor:
                 
                 # evaulate each bidding agent against this task
                 for agent in available_agents:
-                    # travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
-                    travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
-                    total_utility = base_reward - travel_cost - burgard_penalty
-                    # logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}]")
+                    room_penalty = 0.0
+                    if task.room_id != -1 and task.room_id in claimed_rooms:
+                        room_penalty = w_room_penalty
+                    travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
+                    # travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
+                    total_utility = base_reward - travel_cost - burgard_penalty - room_penalty
+                    
+                    logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}], Room Penalty: {room_penalty}]")
+                    
                     if total_utility > highest_utility:
                         highest_utility = total_utility
                         best_task = task
@@ -205,14 +213,54 @@ class Supervisor:
             self._set_agent_task(winning_agent, best_task, best_path)
             logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
             logger.debug(f"Assigned path {best_path}")
+
             claimed_tasks.append(best_task)
             unassigned_tasks.remove(best_task)
             available_agents.remove(winning_agent)
-
+            if best_task.room_id != -1:
+                    logger.debug(f"Claiming room {best_task.room_id} for agent {winning_agent.name} to encourage spatial exclusivity.")
+                    claimed_rooms.add(best_task.room_id)
+            
         for agent in available_agents:
             logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")
             self._set_agent_task(agent, Task(TaskType.IDLE), [])
 
+    def _extract_weighted_centroids(self, labeled_mask: np.ndarray, num_regions_raw: int, use_room_ids: bool) -> list[tuple[int, int, float, int]]:
+        """
+        Extract weighted centroids from a labeled mask with a room id
+        """
+        weighted_centroids = []
+        tiles_per_split = 4 # any cluster with a multiple of this will be split into multiple targets
+
+        for i in range(1, num_regions_raw + 1):
+            coords = np.argwhere(labeled_mask == i)
+            
+            if len(coords) == 0:
+                continue
+            num_targets = max(1, len(coords) // tiles_per_split)
+            raw_eig = len(coords) / num_targets 
+            # clip the info gain to the split, such that larger clusters don't get disproportionately high weights
+            expected_info_gain = min(float(tiles_per_split), raw_eig)
+
+            if num_targets == 1:
+                # Standard mean for small regions
+                mean_coord = coords.mean(axis=0)
+                distances = cdist([mean_coord], coords)
+                best_coord = coords[np.argmin(distances)]
+                room_id = i if use_room_ids else -1
+                weighted_centroids.append((int(best_coord[1]), int(best_coord[0]), expected_info_gain, room_id))
+            else:
+                cluster_centers, _ = kmeans(coords.astype(float), num_targets)
+                distances = cdist(cluster_centers, coords)
+                
+                closest_indices = np.argmin(distances, axis=1)
+                
+                for idx in np.unique(closest_indices):
+                    best_coord = coords[idx]
+                    room_id = i if use_room_ids else -1
+                    weighted_centroids.append((int(best_coord[1]), int(best_coord[0]), expected_info_gain, room_id))
+        return weighted_centroids
+    
     def _extract_frontiers(self) -> list:
         explored = np.array(self.global_explored, dtype=bool)
         traversable = self.shared_belief.traversability.matrix == TraversabilityLevel.TRAVERSABLE
@@ -232,35 +280,65 @@ class Supervisor:
             label(frontier_mask, structure=grouping_structure)
             )
         
-        weighted_centroids = []
-        tiles_per_split = 4 # any cluster with a multiple of this will be split into multiple targets
+        weighted_centroids = self._extract_weighted_centroids(labeled_mask, num_regions_raw, use_room_ids=False)
+        return weighted_centroids
+    
+    def _create_voronoi_partition(self) -> list[tuple[int, int, float, int]]:
+        explored = np.array(self.global_explored, dtype=bool)
+        traversable = (self.shared_belief.traversability.matrix == TraversabilityLevel.TRAVERSABLE)
+        
+        known_free_space = (explored & traversable).astype(int)
 
-        for i in range(1, num_regions_raw + 1):
-            coords = np.argwhere(labeled_mask == i)
-            
-            if len(coords) == 0:
-                continue
-            num_targets = max(1, len(coords) // tiles_per_split)
-            raw_eig = len(coords) / num_targets 
-            # clip the info gain to the split, such that larger clusters don't get disproportionately high weights
-            expected_info_gain = min(float(tiles_per_split), raw_eig)
+        distance_transform = np.asarray(distance_transform_edt(known_free_space))
+        skeleton = np.asarray(skeletonize(known_free_space))
 
-            if num_targets == 1:
-                # Standard mean for small regions
-                mean_coord = coords.mean(axis=0)
-                distances = cdist([mean_coord], coords)
-                best_coord = coords[np.argmin(distances)]
-                weighted_centroids.append((int(best_coord[1]), int(best_coord[0]), expected_info_gain))
-            else:
-                cluster_centers, _ = kmeans(coords.astype(float), num_targets)
-                distances = cdist(cluster_centers, coords)
-                
-                closest_indices = np.argmin(distances, axis=1)
-                
-                for idx in np.unique(closest_indices):
-                    best_coord = coords[idx]
-                    weighted_centroids.append((int(best_coord[1]), int(best_coord[0]), expected_info_gain))
+        # try and find doorways in the skeleton by looking for points that are close to both sides of a wall
+        doorway_threshold = 2.0 
+        critical_points = skeleton & (distance_transform <= doorway_threshold)
 
+        # block off the critical points in the traversable space to create a voronoi partition
+        segmented_space = traversable.copy()
+        segmented_space[critical_points] = 0
+
+        grouping_structure = np.ones((3, 3), dtype=int)
+        labeled_rooms, num_rooms = cast(
+            tuple[np.ndarray, int],
+            label(segmented_space, structure=grouping_structure)
+        )
+
+        unexplored_and_traversable = (~explored) & traversable        
+        cross_structure = np.array([[0, 1, 0],
+                                    [1, 1, 1],
+                                    [0, 1, 0]])
+        
+        adjacent_to_unexplored = binary_dilation(unexplored_and_traversable, structure=cross_structure)
+        frontier_mask = explored & traversable & adjacent_to_unexplored
+
+        frontier_coords = np.argwhere(frontier_mask)
+        if len(frontier_coords) == 0:
+            return []
+
+        room_coords = np.argwhere(labeled_rooms > 0)
+        
+        # if not enough space for voronoi partitioning, just return the frontier centroids
+        if len(room_coords) == 0:
+            labeled_mask, num_regions_raw = cast(
+                tuple[np.ndarray, int],
+                label(frontier_mask, structure=grouping_structure)
+            )
+            return self._extract_weighted_centroids(labeled_mask, num_regions_raw, use_room_ids=False)
+
+        distances = cdist(frontier_coords, room_coords)
+        closest_room_indices = np.argmin(distances, axis=1)
+        
+        frontier_room_assignments = labeled_rooms[room_coords[closest_room_indices][:, 0], 
+                                                room_coords[closest_room_indices][:, 1]]
+
+        room_labeled_mask = np.zeros_like(explored, dtype=int)
+        for idx, (y, x) in enumerate(frontier_coords):
+            room_labeled_mask[y, x] = frontier_room_assignments[idx]
+
+        weighted_centroids = self._extract_weighted_centroids(room_labeled_mask, num_rooms, use_room_ids=True)
         # self._visualize_frontiers(frontier_mask, weighted_centroids)
         return weighted_centroids
 
@@ -303,7 +381,7 @@ class Supervisor:
                             
         return []
 
-    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int, int]]) -> None:        
+    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int, float]]) -> None:        
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
         fig, ax = plt.subplots(figsize=(8, 8))
