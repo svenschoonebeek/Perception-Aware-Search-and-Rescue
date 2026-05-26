@@ -33,14 +33,14 @@ def main():
 
     sim = Simulator(WIDTH, HEIGHT)
     config = MapConfig(num_rooms=10, num_victims=15, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, max_tunnel_thickness=2, fire_spread_rate=0.05, fire_duration=15, initial_fire_points=2)
-    sim.generate_ground_truth(config, 720759293)
+    sim.generate_ground_truth(config, 616072580)
 
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
-    # agent1 = RandAgent("randy", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
-    # agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
-    # agent1 = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
-    agent1 = SddTmpcAgent("sdd-tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    # agent1 = RandAgent("randy", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    # agent1 = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    agent1 = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    # agent1 = SddTmpcAgent("sdd-tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
     sim.add_agent(agent1)
 
     visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, 
@@ -54,7 +54,7 @@ def main():
     plt.show()
 
     logger.info("Launching Visualizer...")
-    viz = Visualizer(history, 1000, 1000)
+    viz = Visualizer(history, 1800, 1800)
     viz.run()
 
 if __name__ == "__main__":
