@@ -38,8 +38,8 @@ def main():
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
     # agent1 = RandAgent("randy", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
-    # agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, True)
-    # agent1 = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.4, 4, True)
+    # agent1 = MpcAgent("mpc", 0, 0, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    # agent1 = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
     agent1 = SddTmpcAgent("sdd-tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
     sim.add_agent(agent1)
 

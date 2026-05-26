@@ -84,6 +84,7 @@ class SddTmpcAgent(MpcAgent):
         dx = np.array([0, 0, -1, 1])
 
         moving_state = self.copy()
+        moving_state.perception.confidence.matrix = np.full((self.world_height, self.world_width), 0.999)
         while head < tail:
             (y, x) = queue[head]
             head += 1
