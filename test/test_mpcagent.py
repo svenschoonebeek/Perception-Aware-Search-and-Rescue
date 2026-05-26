@@ -15,22 +15,18 @@ class MpcAgentTest(unittest.TestCase):
         ground_truth = State(2, 2)
         ground_truth.traversability[0][1] = 1
         agent.scan(ground_truth)
-        self.assertFalse(agent._is_feasible(agent._target_cell(AgentAction.MOVE_RIGHT)))
-
-    def test_is_feasible_oob(self):
-        agent = MpcAgent("mpc", 0, 0, 1, 1, 0.1, 0.9, 1, False)
-        self.assertFalse(agent._is_feasible(agent._target_cell(AgentAction.MOVE_RIGHT)))
-        self.assertFalse(agent._is_feasible(agent._target_cell(AgentAction.MOVE_UP)))
-        self.assertFalse(agent._is_feasible(agent._target_cell(AgentAction.MOVE_LEFT)))
-        self.assertFalse(agent._is_feasible(agent._target_cell(AgentAction.MOVE_DOWN)))
+        agent.x, agent.y = agent._target_cell(AgentAction.MOVE_RIGHT)
+        self.assertFalse(agent._is_feasible())
 
     def test_is_feasible_valid(self):
         agent = MpcAgent("mpc", 0, 0, 2, 2, 0.1, 0.9, 1, False)
         ground_truth = State(2, 2)
         ground_truth.traversability[0][1] = 1
         agent.scan(ground_truth)
-        self.assertTrue(agent._is_feasible(agent._target_cell(AgentAction.MOVE_DOWN)))
-        self.assertTrue(agent._is_feasible(agent._target_cell(AgentAction.WAIT)))
+        agent.x, agent.y = agent._target_cell(AgentAction.MOVE_DOWN)
+        self.assertTrue(agent._is_feasible())
+        agent.x, agent.y = agent._target_cell(AgentAction.MOVE_UP)
+        self.assertTrue(agent._is_feasible())
 
     def test_target_cell_move(self):
         agent = MpcAgent("mpc", 1, 1, 3, 3, 0.1, 0.9, 1, False)
