@@ -10,6 +10,7 @@ from .agent import Agent
 from .visualization import Visualizer
 from .supervisor import Supervisor
 from .util import *
+from .constants import StoppingCondition
 
 import matplotlib.pyplot as plt
 

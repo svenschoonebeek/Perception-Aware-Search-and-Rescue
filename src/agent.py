@@ -100,19 +100,12 @@ class Agent:
         action: The action the agent wants to perform
 
         Returns:
-        The target cell indices
+        The target cell indices (x, y)
         """
-        match action:
-            case AgentAction.MOVE_UP:
-                return self.x, self.y - 1
-            case AgentAction.MOVE_DOWN:
-                return self.x, self.y + 1
-            case AgentAction.MOVE_LEFT:
-                return self.x - 1, self.y
-            case AgentAction.MOVE_RIGHT:
-                return self.x + 1, self.y
-        
-        return self.x, self.y # Wait action
+        # up, down, left, right, wait
+        dy = np.array([-1, 1, 0, 0, 0])
+        dx = np.array([0, 0, -1, 1, 0])
+        return self.x + dx[action], self.y + dy[action]
 
     def move_to(self, x: int, y: int) -> None:
         """

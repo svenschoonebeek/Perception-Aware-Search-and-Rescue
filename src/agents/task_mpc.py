@@ -112,7 +112,7 @@ class TaskMpcAgent(MpcAgent):
                 if int(px) == self.x and int(py) == self.y:
                     continue
 
-                if not self._is_feasible((px, py)):
+                if not self._is_passible((px, py)):
                     logger.debug(f"Agent {self.name} detected an obstacle/hazard on its upcoming path at ({px}, {py})! Requesting new task/path.")
                     path_blocked = True
                     break
@@ -124,6 +124,34 @@ class TaskMpcAgent(MpcAgent):
                                                         data={"agent": self.name}))
                 return False
         return True
+
+    def _is_passible(self, target_cell: tuple[int, int]) -> bool:
+        """
+        Decides whether a cell is passible
+        (e.g. not walking into a wall)
+
+        Parameters:
+        target_cell: The cell to check (x, y)
+
+        Returns:
+        Whether the cell is passible
+        """
+        target_cell_x, target_cell_y = target_cell
+        if (target_cell_x < 0 or target_cell_x >= self.world_width or 
+            target_cell_y < 0 or target_cell_y >= self.world_height): # Out of bounds
+            return False
+
+        if self.perception.victims[target_cell_y][target_cell_x] == VictimPresence.PRESENT: # Hit victim
+            return False
+
+        if self.perception.fire.matrix[target_cell_y][target_cell_x] == FireLevel.BURNING: # On fire
+            return False
+        
+        if self.perception.agents[target_cell_y][target_cell_x] == AgentPresence.PRESENT: # Another agent is there
+            return False
+        
+        return self.perception.traversability[target_cell_y][target_cell_x] == TraversabilityLevel.TRAVERSABLE # Didn't hit wall
+
 
     def _check_for_spatial_conflict(self, supervisor: Supervisor, state: State):
         conflict_distance = self.scan_radius # could change this to be smaller
