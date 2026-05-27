@@ -57,24 +57,24 @@ def main():
     #                    sim.ground_truth.fire)
     # return
 
-    seed = 435132393    # Saved seeds: 182840517, 210577037, 335492940, 95007438
+    seed = 552285066    # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
     sim_rand = Simulator(WIDTH, HEIGHT)
     sim_mpc = Simulator(WIDTH, HEIGHT)
     sim_tmpc = Simulator(WIDTH, HEIGHT)
     sim_sddtmpc = Simulator(WIDTH, HEIGHT)
     
-    sim_rand.generate_ground_truth(config, seed)
-    sim_rand.add_agent(randy)
-    history = sim_rand.run(500)
-    outcome = sim_rand.metrics.outcome.name
-    victims = sim_rand.metrics.victims_found
-    duration = sim_rand.metrics.steps_taken
-    wall_collisions = sim_rand.metrics.terrain_collisions[randy]
-    victim_collisions = sim_rand.metrics.victim_collisions[randy]
-    fire_collisions = sim_rand.metrics.fire_collisions[randy]
-    logger.info("Randy took %d steps, found %d victims, and hit %d walls, %d victims, and %d fires: %s", duration, victims, wall_collisions, victim_collisions, fire_collisions, outcome)
-    Visualizer(history, 1200, 1200).run()
+    # sim_rand.generate_ground_truth(config, seed)
+    # sim_rand.add_agent(randy)
+    # history = sim_rand.run(500)
+    # outcome = sim_rand.metrics.outcome.name
+    # victims = sim_rand.metrics.victims_found
+    # duration = sim_rand.metrics.steps_taken
+    # wall_collisions = sim_rand.metrics.terrain_collisions[randy]
+    # victim_collisions = sim_rand.metrics.victim_collisions[randy]
+    # fire_collisions = sim_rand.metrics.fire_collisions[randy]
+    # logger.info("Randy took %d steps, found %d victims, and hit %d walls, %d victims, and %d fires: %s", duration, victims, wall_collisions, victim_collisions, fire_collisions, outcome)
+    # Visualizer(history, 1200, 1200).run()
 
     sim_mpc.generate_ground_truth(config, seed)
     sim_mpc.add_agent(mpc)

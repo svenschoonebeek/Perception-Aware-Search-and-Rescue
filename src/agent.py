@@ -1,5 +1,5 @@
 from .state import State
-from .constants import AgentAction
+from .constants import AgentAction, FireLevel
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,6 +42,7 @@ class Agent:
         self.scan_accuracy = scan_accuracy # Scan accuracy [0,1]
         self.scan_radius = scan_radius # How far the agent can see when it scans
         self.scan_falloff = scan_falloff # Whether scan accuracy should decrease with distance
+        self.fire_duration = 10 # Assumed length of time a fire can burn for (SHOULD NEVER BE 0)
 
         # Metrics
         self.illegal_moves = 0
@@ -49,6 +50,7 @@ class Agent:
         self.move_history: list[tuple[int, int]] = [(x, y)] # Cells the agent has been to
         self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has scanned at any point in the run
         self.discovered: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent scanned for the first time this step
+        self.fire_durations: np.ndarray = np.zeros((height, width), dtype=int) # How long unscanned cells have been burning for
 
     def copy(self) -> Self:
         cls = type(self)
@@ -95,6 +97,9 @@ class Agent:
 
         self.discovered = visible & ~self.explored
         self.explored[visible] = True
+        burning_mask = self.perception.fire.matrix == FireLevel.BURNING
+        self.fire_durations[burning_mask & ~visible] += 1
+        self.fire_durations[visible] = 0 # Reset duration for visible cells
 
         ys, xs = np.nonzero(visible)
         conf = self.perception.confidence.matrix[visible]

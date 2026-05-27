@@ -133,6 +133,10 @@ class MpcAgent(Agent):
             exposed_mask = adjacent_mask & safe_mask & traversable_mask
             current_fire[exposed_mask] = FireLevel.FLAMMABLE
 
+            burning_mask = current_fire == FireLevel.BURNING
+            burnout_mask = burning_mask & (self.fire_durations >= self.fire_duration)
+            current_fire[burnout_mask] = FireLevel.BURNT
+
             predictions[i] = current_fire
 
         return predictions
