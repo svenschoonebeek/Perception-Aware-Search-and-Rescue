@@ -7,6 +7,7 @@ from .agents.tmpc import TmpcAgent
 from .agents.random import RandAgent
 from .agent import Agent
 from .visualization import Visualizer
+from .constants import StoppingCondition
 
 import matplotlib.pyplot as plt
 
@@ -30,7 +31,7 @@ def main():
     args = parser.parse_args()
     setup_logging(args.debug)
 
-    sim = Simulator(WIDTH, HEIGHT)
+    sim = Simulator(WIDTH, HEIGHT, stopping_condition=StoppingCondition.TIME_LIMIT)
     config = MapConfig(num_rooms=10, num_victims=15, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, max_tunnel_thickness=3, fire_spread_rate=0.05, fire_duration=15, initial_fire_points=2)
     sim.generate_ground_truth(config)
 
@@ -46,7 +47,7 @@ def main():
                        sim.ground_truth.fire)
 
     print("Running Simulation steps...")
-    history = sim.run(500)
+    history = sim.run(100)
 
     # plt.matshow(agent1._closest_unexplored())
     # plt.show()
