@@ -38,20 +38,23 @@ class VictimPresence(IntEnum):
     NOT_PRESENT = 0
     PRESENT = 1
 
-class EventPriority(IntEnum): # TODO to be extended with possible future events
-    """Lower number = Higher Priority"""
-    CRITICAL_VICTIM_FOUND = 1
-    PATH_BLOCKED = 2
-    SPATIAL_CONFLICT = 3
-    LOW_PROGRESS = 4
-    TASK_COMPLETED = 5
+class EventPriority(Enum):
+    VICTIM_FOUND = "victim_found"
+    PATH_BLOCKED = "path_blocked"
+    SPATIAL_CONFLICT = "spatial_conflict"
+    LOW_PROGRESS = "low_progress"
+    TASK_COMPLETED = "task_completed"
 
 @dataclass
 class InterventionEvent:
     priority: EventPriority
     description: str
     data: dict[str, Any] = field(default_factory=dict)
-    
+
+class SearchStatus(Enum):
+    SEARCHING = "searching"
+    RESCUING = "rescuing"
+
 class TaskType(Enum):
     IDLE = "idle"
     RESCUE = "rescue"
@@ -64,6 +67,17 @@ class Task:
     y: int = -1
     weight: float = 1.0
     room_id: int = -1
+    search_status: SearchStatus = SearchStatus.SEARCHING
+
+    def __hash__(self):
+        return hash((self.task_type, self.x, self.y))
+
+    def __eq__(self, other):
+        if not isinstance(other, Task):
+            return False
+        return (self.task_type == other.task_type and 
+                self.x == other.x and 
+                self.y == other.y)
 
 @dataclass
 class AgentInfo:

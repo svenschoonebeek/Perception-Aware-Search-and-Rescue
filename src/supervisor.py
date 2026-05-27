@@ -4,10 +4,11 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import logging
 
+from .util import fast_bfs_array
 from .agent import Agent
 from .state import State
 from .constants import *
-from scipy.ndimage import binary_dilation, distance_transform_edt, label
+from scipy.ndimage import binary_dilation, distance_transform_edt, label, convolve
 from scipy.spatial.distance import cdist
 from scipy.cluster.vq import kmeans
 from skimage.morphology import skeletonize
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class Supervisor:
-    def __init__(self, width: int, height: int, decay: float, impatiance_threshold: int = 5):
+    def __init__(self, width: int, height: int, decay: float, impatiance_threshold: int = 5, rescue_victims: bool = True):
         self.width = width
         self.height = height
         self.shared_belief = State(width, height)
@@ -28,14 +29,17 @@ class Supervisor:
         self.impatience_threshold = impatiance_threshold
         self.decay = decay # Certainty decay per time step [0,1]
         self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
+        self.rescue_victims = rescue_victims # whether the supervisor should assign rescue tasks when victims are found
 
         self.agent_tracker: dict[str, AgentInfo] = {} # tracks necessary information for each agent, used in conflict checking
+        self.task_backlog: set[Task] = set() # used for persistent rescue tasks 
 
     def requires_intervention(self) -> bool:
         """
         Checks if there are any events in the queue that require intervention
         """
-        has_critical_event = any(e.priority == EventPriority.CRITICAL_VICTIM_FOUND for e in self.event_queue)
+        immediate_triggers = [EventPriority.VICTIM_FOUND, EventPriority.TASK_COMPLETED]
+        has_critical_event = any(e.priority in immediate_triggers for e in self.event_queue)
         if has_critical_event:
             return True
         return len(self.event_queue) >= 2
@@ -45,14 +49,15 @@ class Supervisor:
         Adds an event to the queue to be processed by the supervisor
         """
         self.event_queue.append(event)
-        self.event_queue.sort(key=lambda e: e.priority)
     
     def update_belief(self, agent_scans: list[Scan]) -> None:
         """
         Updates the shared belief state based on the agent scans received
         """
         self.shared_belief.confidence.matrix = np.maximum(self.shared_belief.confidence.matrix - self.decay, 0) # vectorized confidence decay
-
+        
+        for agent_name, agent_info in self.agent_tracker.items():
+            logger.debug(f"Agent {agent_name} is tracked with task {agent_info.task.task_type} with target {agent_info.task.x}, {agent_info.task.y} at position ({agent_info.x}, {agent_info.y})")
         for scan in agent_scans:
             if scan.agent_name not in self.agent_tracker:
                 self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE), 0)
@@ -68,13 +73,19 @@ class Supervisor:
             self.global_explored[scan.ys, scan.xs] = True
 
             for x, y, trvs, vuln, vict, agnt, fire, conf in zip(scan.xs, scan.ys, scan.traversability, scan.vulnerability, scan.victims, scan.agents, scan.fire, scan.confidence):
-                if (conf > self.shared_belief.confidence.matrix[y][x]):
-                    self.shared_belief.traversability[y][x] = trvs
-                    self.shared_belief.vulnerability[y][x] = vuln
-                    self.shared_belief.victims[y][x] = vict
-                    self.shared_belief.agents[y][x] = agnt
-                    self.shared_belief.fire[y][x] = fire
-                    self.shared_belief.confidence.matrix[y][x] = conf
+                if vict == VictimPresence.PRESENT and not self.shared_belief.victims[y][x] == VictimPresence.PRESENT:
+                    logger.debug(f"Supervisor detected a victim at ({x}, {y}) based on scan from {scan.agent_name}. Triggering critical victim event.")
+                    self.trigger_event(InterventionEvent(
+                        priority=EventPriority.VICTIM_FOUND,
+                        description=f"Victim found at ({x}, {y}) by {scan.agent_name}",
+                        data={"x": x, "y": y}
+                    ))
+                self.shared_belief.traversability[y][x] = trvs
+                self.shared_belief.vulnerability[y][x] = vuln
+                self.shared_belief.victims[y][x] = vict
+                self.shared_belief.agents[y][x] = agnt
+                self.shared_belief.fire[y][x] = fire
+                self.shared_belief.confidence.matrix[y][x] = conf
 
     def check_for_impatience(self) -> None:
         for agent_name in self.agent_tracker.keys():
@@ -109,6 +120,11 @@ class Supervisor:
     def check_for_victims(self) -> None:
         pass
 
+    def _set_agent_task(self, agent: Agent, task: Task, path: list[tuple[int, int]]) -> None:
+        agent.set_current_task(task)
+        agent.set_current_path(path)
+        self.agent_tracker[agent.name].task = task
+
     def resolve_events(self, agents: list[Agent]) -> None:
         """
         Assigns tasks to agents based on the events in the queue, and the current shared belief state
@@ -116,21 +132,24 @@ class Supervisor:
         unassigned_tasks: list[Task] = []
         bidding_agent_names = set()
         extract_frontiers_flag = False
+        all_agents_bid_flag = False
 
         logger.debug(f"Supervisor is resolving events: {[e.description for e in self.event_queue]}")
         while self.event_queue:
             event = self.event_queue.pop(0)
-            if event.priority == EventPriority.SPATIAL_CONFLICT:
+            if event.priority == EventPriority.SPATIAL_CONFLICT or event.priority == EventPriority.LOW_PROGRESS:
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
             
-            elif event.priority == EventPriority.LOW_PROGRESS:
-                bidding_agent_names.add(event.data["agent"])
-                extract_frontiers_flag = True
+            elif event.priority == EventPriority.VICTIM_FOUND:
+                rescue_task = Task(TaskType.RESCUE, event.data["x"], event.data["y"])
+                self.task_backlog.add(rescue_task)
+                all_agents_bid_flag = True
             
             elif event.priority == EventPriority.PATH_BLOCKED:
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
+                # TODO change this for the agent to resolve locally?
             
             elif event.priority == EventPriority.TASK_COMPLETED: # if agent sets itsself to idle, or supervisor detects an explore task is completed
                 completed_agent_name = event.data["agent"]
@@ -139,18 +158,17 @@ class Supervisor:
                 # doesn't get added to the task list because it is just an update for the tracker or agent
         
         if extract_frontiers_flag:
-            # frontiers = self._extract_frontiers()
-            frontiers = self._create_voronoi_partition()
+            frontiers = self._extract_frontiers()
+            # frontiers = self._create_voronoi_partition()
             for fx, fy, fweight, froom_id in frontiers:
                 unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy, fweight, froom_id))
 
-        bidding_agents = [a for a in agents if a.name in bidding_agent_names]
+        unassigned_tasks.extend(self.task_backlog)
+        bidding_agents = [a for a in agents if a.name in bidding_agent_names and self.agent_tracker[a.name].task.task_type != TaskType.RESCUE]
+        if all_agents_bid_flag:
+            bidding_agents = agents
         self._run_task_auction(unassigned_tasks, bidding_agents)
 
-    def _set_agent_task(self, agent: Agent, task: Task, path: list[tuple[int, int]]) -> None:
-        agent.set_current_task(task)
-        agent.set_current_path(path)
-        self.agent_tracker[agent.name].task = task
 
     def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent]) -> None:
         if not unassigned_tasks or not bidding_agents:
@@ -174,7 +192,10 @@ class Supervisor:
                 # base reward
                 if task.task_type == TaskType.EXPLORE:
                     base_reward = task.weight * explore_reward_per_tile
-                    # base_reward = 100.0
+                if task.task_type == TaskType.RESCUE:
+                    if not self.rescue_victims:
+                        continue
+                    base_reward = 10000
                 
                 burgard_penalty = 0.0
                 
@@ -200,7 +221,7 @@ class Supervisor:
                     # travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
                     total_utility = base_reward - travel_cost - burgard_penalty - room_penalty
                     
-                    logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}], Room Penalty: {room_penalty}]")
+                    # logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}], Room Penalty: {room_penalty}]")
                     
                     if total_utility > highest_utility:
                         highest_utility = total_utility
@@ -224,6 +245,8 @@ class Supervisor:
         for agent in available_agents:
             logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")
             self._set_agent_task(agent, Task(TaskType.IDLE), [])
+        
+        self.task_backlog = set(t for t in self.task_backlog if t not in claimed_tasks)
 
     def _extract_weighted_centroids(self, labeled_mask: np.ndarray, num_regions_raw: int, use_room_ids: bool) -> list[tuple[int, int, float, int]]:
         """
@@ -281,6 +304,7 @@ class Supervisor:
             )
         
         weighted_centroids = self._extract_weighted_centroids(labeled_mask, num_regions_raw, use_room_ids=False)
+        # self._visualize_frontiers(frontier_mask, weighted_centroids)
         return weighted_centroids
     
     def _create_voronoi_partition(self) -> list[tuple[int, int, float, int]]:
@@ -296,9 +320,10 @@ class Supervisor:
         doorway_threshold = 2.0 
         critical_points = skeleton & (distance_transform <= doorway_threshold)
 
-        # block off the critical points in the traversable space to create a voronoi partition
-        segmented_space = traversable.copy()
-        segmented_space[critical_points] = 0
+        thick_barriers = binary_dilation(critical_points, iterations=int(doorway_threshold))
+
+        segmented_space = known_free_space.copy()
+        segmented_space[thick_barriers] = 0
 
         grouping_structure = np.ones((3, 3), dtype=int)
         labeled_rooms, num_rooms = cast(
@@ -339,7 +364,8 @@ class Supervisor:
             room_labeled_mask[y, x] = frontier_room_assignments[idx]
 
         weighted_centroids = self._extract_weighted_centroids(room_labeled_mask, num_rooms, use_room_ids=True)
-        # self._visualize_frontiers(frontier_mask, weighted_centroids)
+        self._visualize_frontiers(frontier_mask, weighted_centroids)
+        # self._visualize_segmentation(known_free_space, distance_transform, skeleton, critical_points, labeled_rooms)
         return weighted_centroids
 
     def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
@@ -352,36 +378,15 @@ class Supervisor:
 
         Returns: a list of (x, y) coordinates representing the path.
         """
-        start = (start_x, start_y)
-        target = (target_x, target_y)
-        
-        if start == target:
-            return [start]
-            
-        queue = deque([[start]])
-        seen = set([start])
-        
-        while queue:
-            path = queue.popleft()
-            x, y = path[-1]
-            
-            if (x, y) == target:
-                return path
-                
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nx, ny = x + dx, y + dy
-                
-                if 0 <= nx < self.width and 0 <= ny < self.height:
-                    if (nx, ny) not in seen:
-                        traversability = self.shared_belief.traversability[ny][nx]
-                        victim_presence = self.shared_belief.victims[ny][nx]
-                        if  traversability != TraversabilityLevel.UNTRAVERSABLE and victim_presence != VictimPresence.PRESENT:
-                            seen.add((nx, ny))
-                            queue.append(path + [(nx, ny)])
-                            
-        return []
+        path = fast_bfs_array(start_x, start_y,
+                             target_x, target_y,
+                             self.shared_belief.traversability.matrix,
+                             self.shared_belief.vulnerability.matrix,
+                             self.shared_belief.fire.matrix,
+                             TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, FireLevel.BURNING.value)
+        return [(int(pt[0]), int(pt[1])) for pt in path]
 
-    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int, float]]) -> None:        
+    def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int, float, int]]) -> None:        
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -389,11 +394,60 @@ class Supervisor:
         display[self.global_explored] = [200, 200, 200]      # explored = light grey
         display[frontier_mask] = [50, 200, 50]               # frontier cells = green
         ax.imshow(display, origin='upper')
-        for col, row, weight in centroids:
+        for col, row, weight, room in centroids:
             ax.plot(col, row, 'r*', markersize=12)
-            ax.annotate(f"({col},{row})\nw={weight:.1f}", (col, row), textcoords="offset points",
+            ax.annotate(f"({col},{row})\nw={weight:.1f}\nr={room}", (col, row), textcoords="offset points",
                         xytext=(4, 4), color='red', fontsize=8)
         ax.set_title(f"Frontiers ({len(centroids)} clusters)")
         ax.set_xlabel("x"); ax.set_ylabel("y")
+        plt.tight_layout()
+        plt.show()
+    
+    import matplotlib.pyplot as plt
+
+    def _visualize_gvg(self, known_free_space, skeleton, intersections, labeled_corridors):
+        """Temporary visualization to debug Tunnel/GVG segmentation."""
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(1, 3, figsize=(12, 5))
+        
+        axes[0].imshow(known_free_space, cmap='gray')
+        axes[0].set_title('1. Known Tunnel Space')
+
+        # Combine skeleton and nodes
+        skel_vis = np.zeros_like(known_free_space, dtype=float)
+        skel_vis[skeleton == 1] = 1.0  # Tunnels in orange
+        skel_vis[intersections] = 2.0  # Intersections in white
+        axes[1].imshow(skel_vis, cmap='hot')
+        axes[1].set_title('2. Skeleton & Intersections (Nodes)')
+
+        # Display the labeled segments
+        axes[2].imshow(labeled_corridors, cmap='tab20')
+        axes[2].set_title('3. Labeled Tunnel Segments (Edges)')
+
+        plt.tight_layout()
+        plt.show()
+    
+    def _visualize_segmentation(self, known_free_space, distance_transform, skeleton, critical_points, labeled_rooms):
+        import matplotlib.pyplot as plt
+        """Temporary visualization to debug room segmentation."""
+        fig, axes = plt.subplots(2, 2, figsize=(8, 8))
+        
+        axes[0, 0].imshow(known_free_space, cmap='gray')
+        axes[0, 0].set_title('1. Known Free Space')
+
+        axes[0, 1].imshow(distance_transform, cmap='viridis')
+        axes[0, 1].set_title('2. Distance Transform')
+
+        # Combine skeleton and critical points
+        skel_vis = np.zeros_like(known_free_space, dtype=float)
+        skel_vis[skeleton] = 1.0  # Skeleton in orange
+        skel_vis[critical_points] = 2.0  # Critical points in white
+        axes[1, 0].imshow(skel_vis, cmap='hot')
+        axes[1, 0].set_title('3. Skeleton & Critical Pts (Doorways)')
+
+        axes[1, 1].imshow(labeled_rooms, cmap='tab20')
+        axes[1, 1].set_title('4. Labeled Rooms (If all one color, it failed)')
+
         plt.tight_layout()
         plt.show()

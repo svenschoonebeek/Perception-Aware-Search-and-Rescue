@@ -269,7 +269,7 @@ class Simulator:
 
     def _update_area_explored(self) -> None:
         """
-        Update each agent's fraction of traversable cells they have ever scanned.
+        Update each agent's fraction, and the supervisor's (so total) of traversable cells they have ever scanned.
         """
         traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSABLE)
         total = int(traversable.sum())
@@ -282,6 +282,9 @@ class Simulator:
         for agent in self.agents:
             explored = int(agent.explored[traversable].sum())
             self.metrics.area_explored[agent] = explored / total
+
+        if self.supervisor is not None:
+            self.metrics.total_explored = int(self.supervisor.global_explored[traversable].sum()) / total
 
     def _apply_vulnerability_damage(self) -> None:
         """
@@ -432,10 +435,10 @@ def _generate_traversability_matrix(
         room_seeds[0][p] = c
         room_seeds[1][p] = f
 
-        random_width = np.random.randint(w_min, w_max + 1)
+        random_width = np.random.randint(w_min, w_max)
         half_random_width = random_width // 2
 
-        random_length = np.random.randint(l_min, l_max + 1)
+        random_length = np.random.randint(l_min, l_max)
         half_random_length = random_length // 2
 
         x_start = max(0, c - half_random_width)

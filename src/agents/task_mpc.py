@@ -1,4 +1,5 @@
 from typing import Self
+from numba import njit
 import numpy as np
 import logging
 
@@ -6,6 +7,7 @@ from .mpc import MpcAgent
 from src.state import State
 from src.constants import *
 from src.supervisor import Supervisor
+from src.util import fast_bfs_array
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +61,29 @@ class TaskMpcAgent(MpcAgent):
                 return
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
             if distance_to_target <= 1.0:
-                self._return_to_idle()
                 supervisor.trigger_event(InterventionEvent(
                     priority=EventPriority.TASK_COMPLETED,
                     description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
                     data={"agent": self.name}
                 ))
-        
+                self._return_to_idle()
+        elif self.current_task.task_type == TaskType.RESCUE:
+            distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
+            if distance_to_target <= 1.0:
+                if self.current_task.search_status == SearchStatus.SEARCHING:
+                    self.current_task.search_status = SearchStatus.RESCUING
+                    self.current_task.x, self.current_task.y = 0, 0 # go to exit, currently hardcoded 0,0
+                    self.current_path = self._calculate_path(self.x, self.y, self.current_task.x, self.current_task.y)
+                    # TODO use maria's implementation, also think about how simulator will handle this
+                elif self.current_task.search_status == SearchStatus.RESCUING:
+                    supervisor.trigger_event(InterventionEvent(
+                        priority=EventPriority.TASK_COMPLETED,
+                        description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
+                        data={"agent": self.name}
+                    ))
+                    self._return_to_idle()
+                
+
         self.conflict_timeout += 1
         if (self.conflict_timeout >= 3):
             self._check_for_spatial_conflict(supervisor, state)
@@ -146,8 +164,8 @@ class TaskMpcAgent(MpcAgent):
         return exploration * self.horizon
     
     def _objective_stage(self) -> float:
-        if (self.current_task.task_type == TaskType.EXPLORE):
-            return self._objective_explore()
+        if (self.current_task.task_type == TaskType.EXPLORE or self.current_task.task_type == TaskType.RESCUE):
+            return self._objective_targeted()
         
         return self._objective_wander()
 
@@ -168,7 +186,7 @@ class TaskMpcAgent(MpcAgent):
 
         return discovery + safety + confidence
     
-    def _objective_explore(self) -> float:
+    def _objective_targeted(self) -> float:
         """
         Goes to a certain objective tile (e.g. a frontier) and then switches to wander mode
         """
@@ -223,3 +241,15 @@ class TaskMpcAgent(MpcAgent):
         lookahead_idx = min(current_idx + 2, len(self.current_path) - 1)
         res = self.current_path[lookahead_idx]
         return res
+    
+    def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
+        """
+        Calculates a path from the current position to the target position using BFS. Returns a list of (x, y) tuples representing the path.
+        """
+        path = fast_bfs_array(start_x, start_y,
+                             target_x, target_y,
+                             self.perception.traversability.matrix,
+                             self.perception.vulnerability.matrix,
+                             self.perception.fire.matrix,
+                             TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, FireLevel.BURNING.value)
+        return [(int(pt[0]), int(pt[1])) for pt in path]
