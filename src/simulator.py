@@ -14,7 +14,7 @@ from .metric import Metric
 logger = logging.getLogger(__name__)
 
 class Simulator:
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int, stopping_condition: StoppingCondition = StoppingCondition.ALL_VICTIMS_FOUND):
         self.width = width
         self.height = height
         self.agents: list[Agent] = []
@@ -22,6 +22,7 @@ class Simulator:
         self.fire_manager: FireManager = FireManager(width, height, 0.0, 0) #? Start with a non-spreading fire manager, wondering if it is the right way
         self.metrics = Metric()
         self.tripping = True
+        self.stopping_condition: StoppingCondition = stopping_condition
 
     def add_agent(self, agent: Agent) -> None:
         """
@@ -227,7 +228,7 @@ class Simulator:
 
         if found > 0 and self.metrics.time_to_first_found is None:
             self.metrics.time_to_first_found = self.metrics.steps_taken
-        if found == total and self.metrics.time_to_all_found is None:
+        if found == total and self.metrics.time_to_all_found is None and self.stopping_condition == StoppingCondition.ALL_VICTIMS_FOUND:
             self.metrics.time_to_all_found = self.metrics.steps_taken
             self.metrics.outcome = RunOutcome.SUCCESS
 

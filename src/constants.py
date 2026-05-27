@@ -6,6 +6,11 @@ class RunOutcome(Enum):
     SUCCESS = "success"
     TIMEOUT = "timeout"
 
+class StoppingCondition(Enum):
+    ALL_VICTIMS_FOUND = "all_victims_found"
+    ALL_VICTIMS_RESCUED = "all_victims_rescued"
+    TIME_LIMIT = "time_limit"
+
 class AgentAction(IntEnum):
     MOVE_UP = 0
     MOVE_DOWN = 1
