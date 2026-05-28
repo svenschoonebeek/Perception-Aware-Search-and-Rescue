@@ -67,12 +67,14 @@ class Agent:
         copy.scan_accuracy = self.scan_accuracy
         copy.scan_radius = self.scan_radius
         copy.scan_falloff = self.scan_falloff
+        copy.fire_duration = self.fire_duration
 
         copy.illegal_moves = self.illegal_moves
         copy.infeasible_states = self.infeasible_states
         copy.move_history = self.move_history.copy()
         copy.explored = np.copy(self.explored)
         copy.discovered = np.copy(self.discovered)
+        copy.fire_durations = np.copy(self.fire_durations)
 
         return copy
 

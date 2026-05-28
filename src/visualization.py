@@ -49,6 +49,7 @@ class Visualizer:
     def __init__(self, history, max_grid_w=800, max_grid_h=800):
         pygame.init()
         pygame.display.set_caption("Search and Rescue Simulation Visualizer")
+        pygame.display.set_icon(pygame.image.load("assets/robot.png"))
 
         #self.history = history
         self.all_histories = history
