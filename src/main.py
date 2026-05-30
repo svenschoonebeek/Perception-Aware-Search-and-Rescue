@@ -7,6 +7,7 @@ import numpy as np
 from .simulator import Simulator, MapConfig, visualize_grid_gen
 from .agents.mpc import MpcAgent
 from .agents.tmpc import TmpcAgent
+from .agents.sdd_tmpc import SddTmpcAgent
 from .agents.random import RandAgent
 from .agent import Agent
 from .visualization import Visualizer

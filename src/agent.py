@@ -1,5 +1,5 @@
 from .state import State
-from .constants import AgentAction
+from .constants import AgentAction, FireLevel
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,6 +42,7 @@ class Agent:
         self.scan_accuracy = scan_accuracy # Scan accuracy [0,1]
         self.scan_radius = scan_radius # How far the agent can see when it scans
         self.scan_falloff = scan_falloff # Whether scan accuracy should decrease with distance
+        self.fire_duration = 10 # Assumed length of time a fire can burn for (SHOULD NEVER BE 0)
 
         # Metrics
         self.illegal_moves = 0
@@ -49,6 +50,7 @@ class Agent:
         self.move_history: list[tuple[int, int]] = [(x, y)] # Cells the agent has been to
         self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has scanned at any point in the run
         self.discovered: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent scanned for the first time this step
+        self.fire_durations: np.ndarray = np.zeros((height, width), dtype=int) # How long unscanned cells have been burning for
 
     def copy(self) -> Self:
         cls = type(self)
@@ -65,12 +67,14 @@ class Agent:
         copy.scan_accuracy = self.scan_accuracy
         copy.scan_radius = self.scan_radius
         copy.scan_falloff = self.scan_falloff
+        copy.fire_duration = self.fire_duration
 
         copy.illegal_moves = self.illegal_moves
         copy.infeasible_states = self.infeasible_states
         copy.move_history = self.move_history.copy()
         copy.explored = np.copy(self.explored)
         copy.discovered = np.copy(self.discovered)
+        copy.fire_durations = np.copy(self.fire_durations)
 
         return copy
 
@@ -95,6 +99,9 @@ class Agent:
 
         self.discovered = visible & ~self.explored
         self.explored[visible] = True
+        burning_mask = self.perception.fire.matrix == FireLevel.BURNING
+        self.fire_durations[burning_mask & ~visible] += 1
+        self.fire_durations[visible] = 0 # Reset duration for visible cells
 
         ys, xs = np.nonzero(visible)
         conf = self.perception.confidence.matrix[visible]
@@ -109,19 +116,12 @@ class Agent:
         action: The action the agent wants to perform
 
         Returns:
-        The target cell indices
+        The target cell indices (x, y)
         """
-        match action:
-            case AgentAction.MOVE_UP:
-                return self.x, self.y - 1
-            case AgentAction.MOVE_DOWN:
-                return self.x, self.y + 1
-            case AgentAction.MOVE_LEFT:
-                return self.x - 1, self.y
-            case AgentAction.MOVE_RIGHT:
-                return self.x + 1, self.y
-        
-        return self.x, self.y # Wait action
+        # up, down, left, right, wait
+        dy = np.array([-1, 1, 0, 0, 0])
+        dx = np.array([0, 0, -1, 1, 0])
+        return self.x + dx[action], self.y + dy[action]
 
     def move_to(self, x: int, y: int) -> None:
         """
