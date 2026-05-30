@@ -56,6 +56,7 @@ class MpcAgent(Agent):
                 next_state = model_state._predict_next_state(action, depth)
                 if next_state is None or not next_state._is_feasible():
                     continue
+                next_state.scan(next_state.perception)
 
                 next_objective = objective + ((self.discount ** depth) * next_state._objective_stage())
                 
@@ -104,7 +105,6 @@ class MpcAgent(Agent):
         new_agent.y, new_agent.x = target
 
         new_agent.perception.fire.matrix = self.fire_prediction[depth]        
-        new_agent.scan(new_agent.perception)
 
         return new_agent
 
