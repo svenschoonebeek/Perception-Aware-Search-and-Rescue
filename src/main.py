@@ -8,8 +8,6 @@ from .simulator import Simulator, MapConfig, visualize_grid_gen
 from .agents.mpc import MpcAgent
 from .agents.tmpc import TmpcAgent
 from .agents.sdd_tmpc import SddTmpcAgent
-from .agents.random import RandAgent
-from .agent import Agent
 from .visualization import Visualizer
 
 
@@ -131,7 +129,7 @@ def main():
     # * TEST SEED
     # sim = Simulator(WIDTH, HEIGHT)
 
-    # sim.generate_ground_truth(config)
+    # sim.generate_ground_truth(config, 845631684)
     # sim.add_agent(sdd)
 
     # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, sim.ground_truth.victims, sim.ground_truth.vulnerability, sim.ground_truth.fire)
