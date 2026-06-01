@@ -143,11 +143,12 @@ def main():
     # viz.run()
 
     # * HISTORY 
-
     viz = Visualizer.from_file("saved_runs/private/sim_20260602_003720_122steps_mpc.pkl")
     viz.run()
+
     viz = Visualizer.from_file("saved_runs/private/sim_20260602_003814_300steps_tmpc.pkl")
     viz.run()
+    
     viz = Visualizer.from_file("saved_runs/private/sim_20260602_003614_122steps_sdd.pkl")
     viz.run()
 
