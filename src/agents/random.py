@@ -1,6 +1,6 @@
 from src.agent import Agent, AgentAction
-import random
+import numpy as np
 
 class RandAgent(Agent):
     def get_action(self) -> AgentAction:
-        return random.choice(list(AgentAction))
+        return np.random.choice(list(AgentAction))

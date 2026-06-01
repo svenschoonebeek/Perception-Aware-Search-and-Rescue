@@ -53,13 +53,10 @@ class MpcAgent(Agent):
             best_sequence = []
 
             for action in AgentAction:
-                tx, ty = model_state._target_cell(action)
-                if not(0 <= tx < model_state.world_width and 0 <= ty < model_state.world_height):
-                    continue
-
                 next_state = model_state._predict_next_state(action, depth)
-                if not next_state._is_feasible((next_state.x, next_state.y)):
+                if next_state is None or not next_state._is_feasible():
                     continue
+                next_state.scan(next_state.perception)
 
                 next_objective = objective + ((self.discount ** depth) * next_state._objective_stage())
                 
@@ -84,30 +81,30 @@ class MpcAgent(Agent):
 
         return best_sequence[0]
     
-    def _predict_next_state(self, action: AgentAction, depth: int) -> "MpcAgent": # <- Apparently how to do forward declaration
+    def _predict_next_state(self, action: AgentAction, depth: int) -> "MpcAgent | None": # <- Apparently how to do forward declaration
         """
-        Creates a prediction of the state after performing the given action.
-        This assumes the action is feasible (see self._is_feasible)
+        Predicts the state resulting from the given action, unless said prediction would fall outside the admissible set X
+        Does not check whether the predicted state violates constraints (see self._is_feasible)
 
         Parameters:
         action: The action to perform
 
         Returns:
-        The predicted next state
+        The predicted next state, or None if the action would result in a state not in X (go out of bounds)
         """
+        target_x, target_y = self._target_cell(action)
+        if not(0 <= target_x < self.world_width and 0 <= target_y < self.world_height):
+            return None
+
         new_agent = self.copy()
 
-        # up, down, left, right, wait
-        dy = np.array([-1, 1, 0, 0, 0])
-        dx = np.array([0, 0, -1, 1, 0])
         current = self.y, self.x
-        target = self.y + dy[action], self.x + dx[action]
+        target = target_y, target_x
         new_agent.perception.agents[current] = 0
         new_agent.perception.agents[target] = 1
         new_agent.y, new_agent.x = target
 
         new_agent.perception.fire.matrix = self.fire_prediction[depth]        
-        new_agent.scan(new_agent.perception)
 
         return new_agent
 
@@ -136,35 +133,32 @@ class MpcAgent(Agent):
             exposed_mask = adjacent_mask & safe_mask & traversable_mask
             current_fire[exposed_mask] = FireLevel.FLAMMABLE
 
+            burning_mask = current_fire == FireLevel.BURNING
+            burnout_mask = burning_mask & (self.fire_durations >= self.fire_duration)
+            current_fire[burnout_mask] = FireLevel.BURNT
+
             predictions[i] = current_fire
 
         return predictions
 
-    def _is_feasible(self, target_cell: tuple[int, int]) -> bool:
+    def _is_feasible(self) -> bool:
         """
-        Decides whether a given target cell will result in a feasible position
-        (e.g. not walking into a wall)
-
-        Parameters:
-        target_cell: The cell to check (x, y)
+        Checks whether a given state violates constraints (e.g. not walking into a wall)
+        Assumes the given state is in the admissible set X
 
         Returns:
-        Whether the cell is feasible
+        True if no constraints were violated, else False
         """
-        tx, ty = target_cell
-        if not(0 <= tx < self.world_width and 0 <= ty < self.world_height): # Out of bounds
+        if self.perception.victims[self.y, self.x] == 1: # Hit victim
             return False
 
-        if self.perception.victims[ty][tx] == 1: # Hit victim
-            return False
-
-        # if self.perception.agents[target_cell_y][target_cell_x] == 1: # Hit agent
+        # if self.perception.agents[self.y, self.x] == 1: # Hit agent
         #     return False
         
-        if self.perception.fire.matrix[ty][tx] == FireLevel.BURNING: # On fire
+        if self.perception.fire.matrix[self.y, self.x] == FireLevel.BURNING: # On fire
             return False
         
-        return self.perception.traversability[ty][tx] == 0 # Didn't hit wall
+        return self.perception.traversability[self.y, self.x] == 0 # Didn't hit anything
     
     def _objective_stage(self) -> float:
         """
@@ -173,7 +167,7 @@ class MpcAgent(Agent):
         Returns:
         The objective value
         """
-        w_discovery, w_safety, w_confidence = 100, 10, 3 # To be adjusted
+        w_discovery, w_safety, w_confidence = 100, 0, 3 # To be adjusted
 
         discovery   =  w_discovery * self._discovery_score()
         safety      = -w_safety * self._safety_penalty()
@@ -237,7 +231,7 @@ class MpcAgent(Agent):
     def _closest_unexplored(self) -> NDArray:
         """
         Uses multi-source BFS to calculate the shortest distance from each explored tile to closest unexplored tile
-        JIT-compiled with numba for performance - technically faster than numpy this way
+        should be JIT-compiled with numba for performance - currently infeasible
 
         Returns:
         A world-sized ndarray where each tile is:
@@ -266,16 +260,18 @@ class MpcAgent(Agent):
         dy = np.array([-1, 1, 0, 0])
         dx = np.array([0, 0, -1, 1])
 
+        moving_state = self.copy()
         while head < tail:
             (y, x) = queue[head]
             head += 1
 
             for i in range(4):
-                ny = y + dy[i]
-                nx = x + dx[i]
+                ny: int = y + dy[i]
+                nx: int = x + dx[i]
 
                 if 0 <= ny < self.world_height and 0 <= nx < self.world_width:
-                    if distance[ny, nx] == -1 and self._is_feasible((nx, ny)):
+                    moving_state.y, moving_state.x = ny, nx
+                    if distance[ny, nx] == -1 and moving_state._is_feasible():
                         distance[ny, nx] = distance[y, x] + 1
                         queue[tail] = (ny, nx)
                         tail += 1
