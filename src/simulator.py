@@ -315,7 +315,7 @@ class Simulator:
             config = MapConfig()
         if seed is None:
             seed = (int) (np.random.random() * 1_000_000_000)
-        # logger.info(f"Using seed {seed} to generate the map.")
+        logger.info(f"Using seed {seed} to generate the map.")
         np.random.seed(seed)
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
