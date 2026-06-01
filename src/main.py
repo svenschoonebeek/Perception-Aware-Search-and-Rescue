@@ -57,12 +57,13 @@ def main():
         ]
     df_mpc = pd.DataFrame(columns=metrics)
     df_tmpc = pd.DataFrame(columns=metrics)
+    df_sddtmpc = pd.DataFrame(columns=metrics)
 
     number_of_sims = 100
     max_steps = 300
-    mpc = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.4, 4, True)
-    tmpc = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.4, 4, True)
-    # agent = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.4, 4, True)
+    mpc = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    tmpc = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
+    sddtmpc = SddTmpcAgent("sddtmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
 
     # * RUN SIMULATIONS
     for i in range(number_of_sims):
@@ -70,8 +71,10 @@ def main():
         seed = int(np.random.random() * 1_000_000_000)
         sim_mpc = Simulator(WIDTH, HEIGHT)
         sim_tmpc = Simulator(WIDTH, HEIGHT)
+        sim_sddtmpc = Simulator(WIDTH, HEIGHT)
         mpc_instance = mpc.copy()
         tmpc_instance = tmpc.copy()
+        sddtmpc_instance = sddtmpc.copy()
         
         sim_mpc.generate_ground_truth(config, seed)
         sim_mpc.add_agent(mpc_instance)
@@ -106,16 +109,33 @@ def main():
         area_explored = sim_tmpc.metrics.area_explored[tmpc_instance]
         infeasible_states = sim_tmpc.metrics.infeasible_states[tmpc_instance]
         df_tmpc.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, fire_collisions, wait_actions, area_explored, infeasible_states, seed]
-        logger.info("TMPC run %d complete in %d steps: %s\n", i + 1, duration, outcome)
+        logger.info("TMPC run %d complete in %d steps: %s", i + 1, duration, outcome)
     
+        sim_sddtmpc.generate_ground_truth(config, seed)
+        sim_sddtmpc.add_agent(sddtmpc_instance)
+
+        sim_sddtmpc.run(max_steps)
+        outcome = sim_sddtmpc.metrics.outcome.name
+        victims_found = sim_sddtmpc.metrics.victims_found
+        duration = sim_sddtmpc.metrics.steps_taken
+        wall_collisions = sim_sddtmpc.metrics.terrain_collisions[sddtmpc_instance]
+        victim_collisions = sim_sddtmpc.metrics.victim_collisions[sddtmpc_instance]
+        fire_collisions = sim_sddtmpc.metrics.victim_collisions[sddtmpc_instance]
+        wait_actions = sim_sddtmpc.metrics.wait_actions[sddtmpc_instance]
+        area_explored = sim_sddtmpc.metrics.area_explored[sddtmpc_instance]
+        infeasible_states = sim_sddtmpc.metrics.infeasible_states[sddtmpc_instance]
+        df_sddtmpc.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, fire_collisions, wait_actions, area_explored, infeasible_states, seed]
+        logger.info("SDD-TMPC run %d complete in %d steps: %s\n", i + 1, duration, outcome)
+
     df_mpc.to_csv("saved_runs/data/mpc_results.csv")
     df_tmpc.to_csv("saved_runs/data/tmpc_results.csv")
+    df_sddtmpc.to_csv("saved_runs/data/sddtmpc_results.csv")
 
     # * TEST SEED
     # sim_tmpc = Simulator(WIDTH, HEIGHT)
 
-    # sim_tmpc.generate_ground_truth(config, 179742288)
-    # sim_tmpc.add_agent(tmpc)
+    # sim_tmpc.generate_ground_truth(config, 692168346)
+    # sim_tmpc.add_agent(sddtmpc)
     # history = sim_tmpc.run(max_steps)
 
     # viz = Visualizer(history, 1200, 1200)
