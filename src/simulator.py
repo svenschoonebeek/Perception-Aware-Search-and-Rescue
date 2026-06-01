@@ -62,6 +62,7 @@ class Simulator:
             self.metrics.record_snapshot()  # capture initial metric state
 
         intents = self._collect_intents()
+        logger.debug("Intents: %s", {agent.name: intent for agent, intent in intents.items()})
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
 

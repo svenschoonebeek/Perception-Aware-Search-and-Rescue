@@ -215,7 +215,7 @@ class Supervisor:
                     
                     total_utility = base_reward - travel_cost - burgard_penalty 
                     
-                    logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}]")
+                    # logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}]")
                     
                     if total_utility > highest_utility:
                         highest_utility = total_utility
@@ -225,7 +225,7 @@ class Supervisor:
                 break
             
             best_path = self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y)
-            if best_path is []:
+            if len(best_path) == 0:
                 logger.debug(f"No path found for agent {winning_agent.name} to task at ({best_task.x}, {best_task.y}). Skipping assignment.")
                 unassigned_tasks.remove(best_task)
                 continue

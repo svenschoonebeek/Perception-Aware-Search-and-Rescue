@@ -116,7 +116,7 @@ class TaskMpcAgent(MpcAgent):
 
         if len(self.current_path) > 0:
             path_blocked = False
-            for px, py in self.current_path[:5]: 
+            for px, py in self.current_path[:self.scan_radius]: 
                 if int(px) == self.x and int(py) == self.y:
                     continue
 
@@ -197,7 +197,7 @@ class TaskMpcAgent(MpcAgent):
         Returns:
         The objective value
         """
-        if (self.current_task.task_type == TaskType.EXPLORE):
+        if (self.current_task.task_type == TaskType.EXPLORE or self.current_task.task_type == TaskType.RESCUE):
             return 0
         
         w_exploration = 300
@@ -224,36 +224,62 @@ class TaskMpcAgent(MpcAgent):
         Returns:
         The objective value
         """
-        w_discovery, w_safety, w_confidence = 100, 10, 3 # To be adjusted
+        w_discovery, w_safety, w_confidence, w_repulsion = 100, 10, 3, 50 # To be adjusted
 
         discovery   =  w_discovery * self._discovery_score()
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
+        repulsion   =  -w_repulsion * self._agent_repulsion_penalty()
 
-        # print("Discovery:", discovery, "Safety:", safety, "Confidence:", confidence)
+        # print("Discovery:", discovery, "Safety:", safety, "Confidence:", confidence, "Repulsion:", repulsion)
 
-        return discovery + safety + confidence
+        return discovery + safety + confidence + repulsion
     
     def _objective_targeted(self) -> float:
         """
         Goes to a certain objective tile (e.g. a frontier) and then switches to wander mode
         """
-        w_discovery, w_safety, w_confidence, w_path = 10, 20, 1, 100 # To be adjusted
+        w_discovery, w_safety, w_confidence, w_path, w_repulsion = 10, 5, 1, 100, 200 # To be adjusted
 
         safety      = -w_safety * self._safety_penalty()
         confidence  =  w_confidence * self._confidence_score()
-        # TODO maybe here we also do discovery? such that it explores on the way
-        discovery =  w_discovery * self._discovery_score()
-
         path_score = w_path * self._calculate_path_score()
+        repulsion   =  -w_repulsion * self._agent_repulsion_penalty()
 
-        # print("path_score:", path_score, "Safety:", safety, "Confidence:", confidence)
+        #? maybe here we also do discovery? such that it explores on the way
+        # discovery =  w_discovery * self._discovery_score()
+        
+        # print("path_score:", path_score, "Safety:", safety, "Confidence:", confidence, "Repulsion:", repulsion)
 
-        return safety + confidence + path_score + discovery
+        return safety + confidence + path_score + repulsion # + discovery
     
+    def _agent_repulsion_penalty(self) -> float:
+        """
+        Calculates a penalty based on proximity to other agents in the current evaluated state.
+        This forces the MPC to route around other agents instead of stepping into them.
+        """
+        penalty = 0.0        
+        agent_ys, agent_xs = np.nonzero(self.perception.agents.matrix)
+
+        for y, x in zip(agent_ys, agent_xs):
+            # skip self
+            dist = np.sqrt((self.x - x)**2 + (self.y - y)**2)
+            if dist == 0:
+                continue
+
+            # heavy penalty for stepping orthogonally or diagonally adjacent to another agent
+            if dist <= 1.5: 
+                penalty += 1.0
+            # moderate penalty for being two tiles away
+            elif dist <= 2.5:
+                penalty += 0.2
+                
+        return min(1.0, penalty)
+        
     def _calculate_path_score(self) -> float:
         """
-        Calculates a raw, normalized score for how well the agent is adhering to its path.
+        Calculates a continuous score that rewards forward progress along the path,
+        even if the agent has to temporarily step off the path to avoid an obstacle.
         """
         if len(self.current_path) == 0:
             return 0.0
@@ -267,28 +293,13 @@ class TaskMpcAgent(MpcAgent):
                 min_dist = dist
                 closest_idx = i
 
-        if min_dist == 0: # exactly on the path
-            return 4.0 + (closest_idx * 0.1)
-        else: # off the path
-            return 3.0 - (min_dist * 0.2)
-
-
-    def _get_carrot_waypoint(self) -> tuple[int, int]:        
-        if len(self.current_path) == 0:
-            return (self.x, self.y)
+        base_score = 0.5 
+        progress_reward = closest_idx * 0.1
+        detour_penalty = min_dist * 0.05 
         
-        current_idx = 0
-        min_dist = float('inf')
-        for i, (px, py) in enumerate(self.current_path):
-            dist = np.linalg.norm(np.array([py, px]) - np.array([self.y, self.x]))
-            if dist < min_dist:
-                min_dist = dist
-                current_idx = i
+        score = base_score + progress_reward - detour_penalty
         
-        # look 2 steps ahead on the path, this will be the carrot
-        lookahead_idx = min(current_idx + 2, len(self.current_path) - 1)
-        res = self.current_path[lookahead_idx]
-        return res
+        return min(1.0, max(0.0, score))
     
     def _calculate_path(self, start_x: int, start_y: int, target_x: int, target_y: int) -> list[tuple[int, int]]:
         """
