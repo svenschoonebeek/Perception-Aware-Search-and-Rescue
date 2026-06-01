@@ -43,7 +43,12 @@ class VictimPresence(IntEnum):
     NOT_PRESENT = 0
     PRESENT = 1
 
-class EventPriority(Enum):
+@dataclass
+class Capabilities:
+    exploration: float = 1.0
+    rescuing: float = 1.0
+
+class EventType(Enum):
     VICTIM_FOUND = "victim_found"
     PATH_BLOCKED = "path_blocked"
     SPATIAL_CONFLICT = "spatial_conflict"
@@ -52,7 +57,7 @@ class EventPriority(Enum):
 
 @dataclass
 class InterventionEvent:
-    priority: EventPriority
+    type: EventType
     description: str
     data: dict[str, Any] = field(default_factory=dict)
 

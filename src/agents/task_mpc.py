@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class TaskMpcAgent(MpcAgent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
-                 decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool):
+                 decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool, capabilities: Capabilities):
         
         super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff)
         
@@ -21,6 +21,7 @@ class TaskMpcAgent(MpcAgent):
         self.current_task = Task(TaskType.IDLE, -1, -1)
         self.current_path: list[tuple[int, int]] = []
         
+        self.capabilities = capabilities # how good the agent is at exploring vs rescuing
         self.conflict_timeout = 0
     
     def copy(self) -> Self:
@@ -28,6 +29,7 @@ class TaskMpcAgent(MpcAgent):
 
         copy.current_path = list(self.current_path)
         copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
+        copy.capabilities = Capabilities(self.capabilities.exploration, self.capabilities.rescuing)
         copy.conflict_timeout = self.conflict_timeout
 
         return copy
@@ -43,6 +45,12 @@ class TaskMpcAgent(MpcAgent):
     
     def set_current_path(self, path: list[tuple[int, int]]) -> None:
         self.current_path = path
+    
+    def get_capabilities(self) -> Capabilities:
+        """
+        Returns the capabilities of the agent, to be used by the supervisor for task allocation
+        """
+        return self.capabilities
     
     def check_status(self, supervisor: Supervisor | None, state: State) -> None:
         """
@@ -62,7 +70,7 @@ class TaskMpcAgent(MpcAgent):
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
             if distance_to_target <= 1.0:
                 supervisor.trigger_event(InterventionEvent(
-                    priority=EventPriority.TASK_COMPLETED,
+                    type=EventType.TASK_COMPLETED,
                     description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
                     data={"agent": self.name}
                 ))
@@ -77,7 +85,7 @@ class TaskMpcAgent(MpcAgent):
                     # TODO use maria's implementation, also think about how simulator will handle this
                 elif self.current_task.search_status == SearchStatus.RESCUING:
                     supervisor.trigger_event(InterventionEvent(
-                        priority=EventPriority.TASK_COMPLETED,
+                        type=EventType.TASK_COMPLETED,
                         description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
                         data={"agent": self.name}
                     ))
@@ -119,7 +127,7 @@ class TaskMpcAgent(MpcAgent):
                     
             if path_blocked:
                 self._return_to_idle() 
-                supervisor.trigger_event(InterventionEvent(priority=EventPriority.PATH_BLOCKED, 
+                supervisor.trigger_event(InterventionEvent(type=EventType.PATH_BLOCKED, 
                                                         description=f"{self.name} detected a blocked path.",
                                                         data={"agent": self.name}))
                 return False
@@ -168,7 +176,7 @@ class TaskMpcAgent(MpcAgent):
             if distance < conflict_distance:
                 logger.debug(f"{self.name} detected a spatial conflict with another agent.")
                 supervisor.trigger_event(InterventionEvent(
-                    priority=EventPriority.SPATIAL_CONFLICT,
+                    type=EventType.SPATIAL_CONFLICT,
                     description=f"{self.name} detected a spatial conflict locally.",
                     data={"agent": self.name}
                     ))
@@ -183,6 +191,12 @@ class TaskMpcAgent(MpcAgent):
         self.current_path = []
     
     def _objective_terminal(self) -> float:
+        """
+        Calculates the agent's predicted terminal reward - calculated only for the last step
+
+        Returns:
+        The objective value
+        """
         if (self.current_task.task_type == TaskType.EXPLORE):
             return 0
         
@@ -192,6 +206,12 @@ class TaskMpcAgent(MpcAgent):
         return exploration * self.horizon
     
     def _objective_stage(self) -> float:
+        """
+        Calculates the agent's predicted stage reward - calculated for every step
+
+        Returns:
+        The objective value
+        """
         if (self.current_task.task_type == TaskType.EXPLORE or self.current_task.task_type == TaskType.RESCUE):
             return self._objective_targeted()
         

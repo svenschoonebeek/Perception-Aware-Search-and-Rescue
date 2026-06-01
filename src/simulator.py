@@ -86,8 +86,7 @@ class Simulator:
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans)
             self.supervisor.check_for_impatience()
-            self.supervisor.check_for_victims()
-            # self.supervisor.check_explore_tasks()
+            self.supervisor.check_explore_tasks()
 
             if self.supervisor.requires_intervention():
                 self.supervisor.resolve_events(self.agents)
@@ -266,13 +265,14 @@ class Simulator:
 
         if found > 0 and self.metrics.time_to_first_found is None:
             self.metrics.time_to_first_found = self.metrics.steps_taken
-        if found == total and self.metrics.time_to_all_found is None and self.stopping_condition == StoppingCondition.ALL_VICTIMS_FOUND:
+        if found == total and self.metrics.time_to_all_found is None:
             self.metrics.time_to_all_found = self.metrics.steps_taken
-            self.metrics.outcome = RunOutcome.SUCCESS
+            if self.stopping_condition == StoppingCondition.ALL_VICTIMS_FOUND:
+                self.metrics.outcome = RunOutcome.SUCCESS
 
     def _update_area_explored(self) -> None:
         """
-        Update each agent's fraction, and the supervisor's (so total) of traversable cells they have ever scanned.
+        Update each agent's fraction, and the total of traversable cells they have ever scanned.
         """
         traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSABLE)
         total = int(traversable.sum())
@@ -282,12 +282,15 @@ class Simulator:
                 self.metrics.area_explored[agent] = 0.0
             return
 
+        global_explored = np.zeros_like(traversable, dtype=bool)
+        
         for agent in self.agents:
+            global_explored |= (agent.explored)
             explored = int(agent.explored[traversable].sum())
             self.metrics.area_explored[agent] = explored / total
-
-        if self.supervisor is not None:
-            self.metrics.total_explored = int(self.supervisor.global_explored[traversable].sum()) / total
+        
+        total_explored_count = int(global_explored[traversable].sum())
+        self.metrics.total_explored = total_explored_count / total
 
     def _apply_vulnerability_damage(self) -> None:
         """

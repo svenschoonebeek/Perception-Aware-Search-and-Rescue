@@ -1,3 +1,4 @@
+from matplotlib import ticker
 import numpy as np
 import logging
 from numba import njit
@@ -16,9 +17,10 @@ def setup_logging(is_debug: bool):
         level=log_level,
         format='%(levelname)s - %(message)s',
     )
-    # prevent debug spew from numba and matplotlib
+    # prevent debug spew
     logging.getLogger('numba').setLevel(logging.WARNING)
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('PIL').setLevel(logging.WARNING)
 
 @njit(debug=False, cache=True)
 def fast_bfs_array(start_x, start_y, target_x, target_y, traversability, victims, fire, untraversable_val, victim_present_val, fire_burning_val):
@@ -109,10 +111,48 @@ def warmup_numba_compilers():
     logger.info(f"Numba warmup complete. Compilation took {elapsed:.2f}s.")
 
 def plot_total_exploration(metric_history: list[MetricInTime]):
-    steps = [m.total_explored for m in metric_history]
-    plt.plot(steps)
-    plt.xlabel("Time Step")
-    plt.ylabel("Total Explored Fraction")
-    plt.title("Total Explored Fraction Over Time")
+    if not metric_history:
+        print("No metric history to plot.")
+        return
+
+    time_steps = [m.step for m in metric_history]
+    total_explored = [m.total_explored for m in metric_history]
+
+    plt.figure(figsize=(10, 6))
+
+    agents = list(metric_history[0].area_explored.keys())
+    for agent in agents:
+        agent_explored = [m.area_explored.get(agent, 0.0) for m in metric_history]
+        agent_name = getattr(agent, 'name', f"Agent {id(agent)}") 
+        plt.plot(time_steps, agent_explored, linestyle='--', alpha=0.4, label=f'{agent_name}')
+
+    plt.plot(time_steps, total_explored, color='blue', linewidth=2.5, label='Total Swarm Exploration')
+    plt.fill_between(time_steps, total_explored, color='blue', alpha=0.05)
+
+    full_exploration_step = next((m.step for m in metric_history if m.total_explored >= 0.999), None)
+    if full_exploration_step is not None:
+        plt.axvline(x=full_exploration_step, color='green', linestyle=':', linewidth=2)
+        plt.text(full_exploration_step, 0.05, f' 100% Explored\n (Step {full_exploration_step})', 
+                 color='green', verticalalignment='bottom')
+
+    final_metric = metric_history[-1]
+    
+    if final_metric.time_to_all_found is not None:
+        t_all = final_metric.time_to_all_found        
+        plt.axvline(x=t_all, color='red', linestyle='-.', linewidth=1.5, alpha=0.7)
+        plt.text(t_all, 0.05, f' All Victims Found\n (Step {final_metric.time_to_all_found})', color='red')
+
+    plt.xlabel("Time Step", fontsize=12)
+    plt.ylabel("Area Explored", fontsize=12)
+    plt.title("Swarm Exploration Progress & Milestones", fontsize=14, fontweight='bold')
+    
+    plt.gca().yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1.0))
+    plt.ylim(0, 1.05) 
+    plt.xlim(0, max(time_steps) if time_steps else 1)
+    plt.grid(True, linestyle='--', alpha=0.6)
+    
+    plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0.)
+    
+    plt.tight_layout()
 
     plt.show()

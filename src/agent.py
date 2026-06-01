@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Self
 from tcod.map import compute_fov
 from tcod.libtcodpy import FOV_RESTRICTIVE
 
-from .constants import AgentAction, FireLevel, Scan, Task, TaskType, TraversabilityLevel
+from .constants import AgentAction, Capabilities, FireLevel, Scan, Task, TaskType, TraversabilityLevel
 
 if TYPE_CHECKING:
     from .supervisor import Supervisor
@@ -154,6 +154,12 @@ class Agent:
         Sets the current path of the agent, to be used by the supervisor for task allocation
         """
         pass
+
+    def get_capabilities(self) -> Capabilities:
+        """
+        Returns the capabilities of the agent, to be used by the supervisor for task allocation
+        """
+        return Capabilities()
     
     def _tiles_in_radius(self) -> NDArray[np.bool]:
         """

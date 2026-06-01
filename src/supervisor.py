@@ -28,7 +28,7 @@ class Supervisor:
         
         self.impatience_threshold = impatiance_threshold
         self.decay = decay # Certainty decay per time step [0,1]
-        self.event_queue: list[InterventionEvent] = [] # A queue of events reported by agents that the supervisor can respond to
+        self.unresolved_events: list[InterventionEvent] = [] # A list of events reported by agents that the supervisor can respond to
         self.rescue_victims = rescue_victims # whether the supervisor should assign rescue tasks when victims are found
 
         self.agent_tracker: dict[str, AgentInfo] = {} # tracks necessary information for each agent, used in conflict checking
@@ -38,17 +38,17 @@ class Supervisor:
         """
         Checks if there are any events in the queue that require intervention
         """
-        immediate_triggers = [EventPriority.VICTIM_FOUND, EventPriority.TASK_COMPLETED]
-        has_critical_event = any(e.priority in immediate_triggers for e in self.event_queue)
+        immediate_triggers = [EventType.VICTIM_FOUND, EventType.TASK_COMPLETED]
+        has_critical_event = any(e.type in immediate_triggers for e in self.unresolved_events)
         if has_critical_event:
             return True
-        return len(self.event_queue) >= 2
+        return len(self.unresolved_events) >= 2
     
     def trigger_event(self, event: InterventionEvent) -> None:
         """
         Adds an event to the queue to be processed by the supervisor
         """
-        self.event_queue.append(event)
+        self.unresolved_events.append(event)
     
     def update_belief(self, agent_scans: list[Scan]) -> None:
         """
@@ -76,7 +76,7 @@ class Supervisor:
                 if vict == VictimPresence.PRESENT and not self.shared_belief.victims[y][x] == VictimPresence.PRESENT:
                     logger.debug(f"Supervisor detected a victim at ({x}, {y}) based on scan from {scan.agent_name}. Triggering critical victim event.")
                     self.trigger_event(InterventionEvent(
-                        priority=EventPriority.VICTIM_FOUND,
+                        type=EventType.VICTIM_FOUND,
                         description=f"Victim found at ({x}, {y}) by {scan.agent_name}",
                         data={"x": x, "y": y}
                     ))
@@ -94,7 +94,7 @@ class Supervisor:
             if self.agent_tracker[agent_name].impatience > self.impatience_threshold:
                 logger.debug(f"{agent_name} has high global impatience! Triggering intervention.")
                 self.trigger_event(InterventionEvent(
-                    priority=EventPriority.LOW_PROGRESS,
+                    type=EventType.LOW_PROGRESS,
                     description=f"{agent_name} is suffering from redundant coverage.",
                     data={"agent": agent_name}
                 ))
@@ -111,14 +111,11 @@ class Supervisor:
                         if target_agent_name != checking_agent_name:
                             logger.debug(f"Target at ({tx}, {ty}) for {target_agent_name} was cleared by passing agent {checking_agent_name}.")
                             self.trigger_event(InterventionEvent(
-                                priority=EventPriority.TASK_COMPLETED,
+                                type=EventType.TASK_COMPLETED,
                                 description=f"Exploration task at ({tx}, {ty}) was cleared by {checking_agent_name}.",
                                 data={"agent": target_agent_name}
                             ))
                         break
-
-    def check_for_victims(self) -> None:
-        pass
 
     def _set_agent_task(self, agent: Agent, task: Task, path: list[tuple[int, int]]) -> None:
         agent.set_current_task(task)
@@ -134,24 +131,24 @@ class Supervisor:
         extract_frontiers_flag = False
         all_agents_bid_flag = False
 
-        logger.debug(f"Supervisor is resolving events: {[e.description for e in self.event_queue]}")
-        while self.event_queue:
-            event = self.event_queue.pop(0)
-            if event.priority == EventPriority.SPATIAL_CONFLICT or event.priority == EventPriority.LOW_PROGRESS:
+        logger.debug(f"Supervisor is resolving events: {[e.description for e in self.unresolved_events]}")
+        while self.unresolved_events:
+            event = self.unresolved_events.pop(0)
+            if event.type == EventType.SPATIAL_CONFLICT or event.type == EventType.LOW_PROGRESS:
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
             
-            elif event.priority == EventPriority.VICTIM_FOUND:
+            elif event.type == EventType.VICTIM_FOUND and self.rescue_victims:
                 rescue_task = Task(TaskType.RESCUE, event.data["x"], event.data["y"])
                 self.task_backlog.add(rescue_task)
                 all_agents_bid_flag = True
             
-            elif event.priority == EventPriority.PATH_BLOCKED:
+            elif event.type == EventType.PATH_BLOCKED:
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
                 # TODO change this for the agent to resolve locally?
             
-            elif event.priority == EventPriority.TASK_COMPLETED: # if agent sets itsself to idle, or supervisor detects an explore task is completed
+            elif event.type == EventType.TASK_COMPLETED: # if agent sets itsself to idle, or supervisor detects an explore task is completed
                 completed_agent_name = event.data["agent"]
                 logger.debug(f"Agent {completed_agent_name} completed a task")
                 self._set_agent_task(next(a for a in agents if a.name == completed_agent_name), Task(TaskType.IDLE), [])
@@ -177,11 +174,13 @@ class Supervisor:
 
         available_agents = list(bidding_agents)
         claimed_tasks: list[Task] = []
-        claimed_rooms = set()
 
-        # weights for room lock, burgards spatial exclusivity, and close to an idle agent, respectively
-        w_room_penalty, w_close_to_target, w_close_to_agent = 10000, 500, 500
+        # weights for burgards spatial exclusivity and close to an idle agent, respectively
+        w_close_to_target, w_close_to_agent = 500, 200
         explore_reward_per_tile = 25.0
+
+        # how far the burgard penalty should extend
+        spatial_decay_scale = 5.0
 
         while unassigned_tasks and bidding_agents:
             best_task = None
@@ -189,14 +188,6 @@ class Supervisor:
             highest_utility = float('-inf')
 
             for task in unassigned_tasks:
-                # base reward
-                if task.task_type == TaskType.EXPLORE:
-                    base_reward = task.weight * explore_reward_per_tile
-                if task.task_type == TaskType.RESCUE:
-                    if not self.rescue_victims:
-                        continue
-                    base_reward = 10000
-                
                 burgard_penalty = 0.0
                 
                 for agent_name, agent_info in self.agent_tracker.items():
@@ -206,22 +197,25 @@ class Supervisor:
                     if agent_info.task.task_type == TaskType.EXPLORE:
                         task_location = (agent_info.task.x, agent_info.task.y)
                         distance_to_task = np.sqrt((task.x - task_location[0])**2 + (task.y - task_location[1])**2)
-                        burgard_penalty += w_close_to_target * np.exp(-distance_to_task) # penalize frontiers close to other agents' current tasks
+                        burgard_penalty += w_close_to_target * np.exp(-distance_to_task / spatial_decay_scale) # penalize frontiers close to other agents' current tasks
                     
                     elif agent_info.task.task_type == TaskType.IDLE:
                         physical_dist = np.sqrt((task.x - agent_info.x)**2 + (task.y - agent_info.y)**2)
-                        burgard_penalty += w_close_to_agent * np.exp(-physical_dist)
+                        burgard_penalty += w_close_to_agent * np.exp(-physical_dist / spatial_decay_scale)
                 
                 # evaulate each bidding agent against this task
                 for agent in available_agents:
-                    room_penalty = 0.0
-                    if task.room_id != -1 and task.room_id in claimed_rooms:
-                        room_penalty = w_room_penalty
                     travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
                     # travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
-                    total_utility = base_reward - travel_cost - burgard_penalty - room_penalty
+                    capabilities = agent.get_capabilities()
+                    if task.task_type == TaskType.EXPLORE:
+                        base_reward = 100 * capabilities.exploration
+                    elif task.task_type == TaskType.RESCUE:
+                        base_reward = 10000 * capabilities.rescuing
                     
-                    # logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}], Room Penalty: {room_penalty}]")
+                    total_utility = base_reward - travel_cost - burgard_penalty 
+                    
+                    logger.debug(f"Agent {agent.name} has utility {total_utility:.1f} for task {task.task_type.name} at ({task.x}, {task.y}) [Base: {base_reward}, Travel Cost: {travel_cost}, Burgard Penalty: {burgard_penalty:.1f}]")
                     
                     if total_utility > highest_utility:
                         highest_utility = total_utility
@@ -231,6 +225,11 @@ class Supervisor:
                 break
             
             best_path = self._calculate_path(winning_agent.x, winning_agent.y, best_task.x, best_task.y)
+            if best_path is []:
+                logger.debug(f"No path found for agent {winning_agent.name} to task at ({best_task.x}, {best_task.y}). Skipping assignment.")
+                unassigned_tasks.remove(best_task)
+                continue
+
             self._set_agent_task(winning_agent, best_task, best_path)
             logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
             logger.debug(f"Assigned path {best_path}")
@@ -238,9 +237,6 @@ class Supervisor:
             claimed_tasks.append(best_task)
             unassigned_tasks.remove(best_task)
             available_agents.remove(winning_agent)
-            if best_task.room_id != -1:
-                    logger.debug(f"Claiming room {best_task.room_id} for agent {winning_agent.name} to encourage spatial exclusivity.")
-                    claimed_rooms.add(best_task.room_id)
             
         for agent in available_agents:
             logger.debug(f"No tasks left to assign, setting agent {agent.name} to idle")
