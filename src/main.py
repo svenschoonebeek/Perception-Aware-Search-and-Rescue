@@ -122,8 +122,8 @@ def main():
         area_explored = sim_sdd.metrics.area_explored[sdd_instance]
         infeasible_states = sim_sdd.metrics.infeasible_states[sdd_instance]
         df_sdd.loc[i] = [outcome, victims_found, duration, wall_collisions, victim_collisions, fire_collisions, wait_actions, area_explored, infeasible_states, seed]
-        logger.info("SDD run %d complete in %d steps: %s\n", i + 1, duration, outcome)
-    
+        logger.info("SDD-TMPC run %d complete in %d steps: %s\n", i + 1, duration, outcome)
+
     df_mpc.to_csv("saved_runs/data/mpc_results.csv")
     df_tmpc.to_csv("saved_runs/data/tmpc_results.csv")
     df_sdd.to_csv("saved_runs/data/sdd_results.csv")
