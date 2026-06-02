@@ -66,6 +66,11 @@ class Simulator:
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
 
+        logger.debug("Agents own perceived locations after moves: agents at %s", [(agent.x, agent.y) for agent in self.agents])
+
+        agent_locations = [(x, y) for y, x in np.argwhere(self.ground_truth.agents.matrix == 1)]
+        logger.debug(f"Agent locations from ground truth matrix: {agent_locations}")
+
         if self.tripping:
             self._perform_trips()
 
@@ -239,12 +244,18 @@ class Simulator:
         Parameters:
         intents: The agent intents
         """
+        # pass 1: clear old positions
         for agent, (tx, ty) in intents.items():
             if self.ground_truth.fire[ty, tx] == FireLevel.BURNING:
                 self.metrics.record_fire_collision(agent)
             if (tx, ty) == (agent.x, agent.y):
                 continue
             self.ground_truth.agents[agent.y][agent.x] = 0
+        
+        # pas 2: update new positions
+        for agent, (tx, ty) in intents.items():
+            if (tx, ty) == (agent.x, agent.y):
+                continue
             self.ground_truth.agents[ty][tx] = 1
             agent.move_to(tx, ty)
 
