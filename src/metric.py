@@ -23,6 +23,7 @@ class MetricInTime:
     damage: dict[Agent, int]
     area_explored: dict[Agent, float]
     total_explored: float
+    inter_agent_distance: float
 
 
 class Metric:
@@ -48,6 +49,7 @@ class Metric:
 
         # Supervisory metrics
         self.total_explored: float = 0.0 # fraction of total traversable area explored by all agents combined, accounting for overlaps
+        self.average_inter_agent_distance: float = 0.0
 
         # Number of times each agent has reached a state defined as "infeasible" by its controller
         self.infeasible_states: dict[Agent, int] = {}
@@ -99,6 +101,7 @@ class Metric:
             time_to_all_found=self.time_to_all_found,
             total_traversable=self.total_traversable,
             total_explored=self.total_explored,
+            inter_agent_distance=self.average_inter_agent_distance,
             terrain_collisions=dict(self.terrain_collisions),
             victim_collisions=dict(self.victim_collisions),
             inter_agent_collisions=dict(self.inter_agent_collisions),

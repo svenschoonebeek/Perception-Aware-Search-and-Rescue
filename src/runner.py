@@ -95,18 +95,32 @@ def gather_data(width: int, height: int,
     cols = ['seed', 'mode', 'total_steps', 'final_exploration', 'time_to_50', 'time_to_70', 'time_to_80', 'time_to_85', 'time_to_90', 'time_to_all_found']
     df = df[cols]
     
-    csv_filename = "simulation_results.csv"
+    csv_filename = f"simulation_results_{num_runs}x_{width}x{height}_{time()}.csv"
     df.to_csv(csv_filename, index=False)
     logger.info(f"Data gathering completed in {time() - start_time:.2f} seconds.")
     logger.info(f"Data successfully saved to {csv_filename}")
-    logger.info(f"Average metrics by mode:\n{df.groupby('mode').mean()}")
+    evaluate_csv_data(csv_filename)
+
+def evaluate_csv_data(csv_filename: str):
+    df = pd.read_csv(csv_filename)
+    logger.info(f"Data loaded from {csv_filename}")
+
+    summary = df.groupby('mode').mean().drop('seed', axis=1, errors='ignore')
+    if 'Supervised' in summary.index and 'Unsupervised' in summary.index:
+        summary.loc['Ratio (Sup/Unsup)'] = summary.loc['Supervised'] / summary.loc['Unsupervised']
+    logger.info(f"Average metrics by mode:\n{summary.round(3)}")
+
+    success_rates = df.groupby('mode')['time_to_all_found'].apply(lambda x: x.notna().mean() * 100)
+    
+    logger.info("\n--- VICTIM RETRIEVAL SUCCESS RATE ---")
+    for mode, rate in success_rates.items():
+        logger.info(f"{mode}: {rate:.1f}%")
 
 
 if __name__ == '__main__':
     setup_logging(False)
     warmup_numba_compilers()
     
-    config = MapConfig(num_rooms=24, num_victims=40, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
+    config = MapConfig(num_rooms=12, num_victims=10, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
                        , initial_fire_points=1, room_vulnerability_probability=0.1, tunnel_vulnerability_probability=0.1, fire_spread_rate=0.01, fire_duration=100)
-    gather_data(width=100, height=100, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=20, config=config)
-    pass
+    gather_data(width=60, height=60, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=1, config=config)
