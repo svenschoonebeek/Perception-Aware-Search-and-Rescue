@@ -62,14 +62,9 @@ class Simulator:
             self.metrics.record_snapshot()  # capture initial metric state
 
         intents = self._collect_intents()
-        logger.debug("Intents: %s", {agent.name: intent for agent, intent in intents.items()})
+        logger.debug("Intents: %s", {agent.name: (int(intent[0]), int(intent[1])) for agent, intent in intents.items()})
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
-
-        logger.debug("Agents own perceived locations after moves: agents at %s", [(agent.x, agent.y) for agent in self.agents])
-
-        agent_locations = [(x, y) for y, x in np.argwhere(self.ground_truth.agents.matrix == 1)]
-        logger.debug(f"Agent locations from ground truth matrix: {agent_locations}")
 
         if self.tripping:
             self._perform_trips()
@@ -137,11 +132,10 @@ class Simulator:
             agent.scan(self.ground_truth)
             record.append([agent.perception.copy()])
         if self.supervisor is not None:
-            record.append([self.supervisor.shared_belief.copy()])
-
+            record.append([self.supervisor.shared_belief.copy()])        
         for _ in range(steps):
             # Record steps
-            logger.info("Step %d =========================", _)
+            logger.debug("Step %d =========================", _)
             step_result = self.step()
             for i in range(len(step_result)):
                 record[i].append(step_result[i])
@@ -390,10 +384,9 @@ class Simulator:
         self.ground_truth.vulnerability.matrix = _generate_vulnerability_matrix(self.width, self.height, rooms, tunnels,
                                                                                 config.room_vulnerability_probability, config.tunnel_vulnerability_probability,
                                                                                 config.room_vulnerability_severity, config.tunnel_vulnerability_severity)
-        self.ground_truth.agents.matrix = _place_agents(self.width, self.height, config.num_agents, rooms, self.ground_truth.victims)
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
 
-        self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration))
+        self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration, seed))
         if self.fire_manager is not None:
             self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
 
@@ -561,39 +554,6 @@ def _generate_vulnerability_matrix(
         vulnerability[room['y_range'][0]:room['y_range'][1], room['x_range'][0]:room['x_range'][1]] = vulnerability_level
 
     return vulnerability
-
-def _place_agents(
-        x: int, y: int, 
-        n: int, 
-        rooms: list[dict], 
-        victims: Grid
-        ) -> np.ndarray:
-    """
-    Places agents in rooms.
-
-    Parameters:
-    x, y: Dimensions of the grid
-    n: Number of agents
-    rooms: A list of rooms with center and bounds
-    victims: A matrix indicating the presence of victims (to avoid placing agents on top of victims)
-    """
-
-    agents = np.full((y, x), AgentPresence.NOT_PRESENT)
-
-    room_n = len(rooms)
-
-    for _ in range(n):
-        random_room = rooms[np.random.randint(0, room_n)]
-        x_range = random_room['x_range']
-        y_range = random_room['y_range']
-        random_x = np.random.randint(x_range[0], x_range[1])
-        random_y = np.random.randint(y_range[0], y_range[1])
-        while (agents[random_y, random_x] == AgentPresence.PRESENT or victims[random_y, random_x] == VictimPresence.PRESENT):
-            random_x = np.random.randint(x_range[0], x_range[1])
-            random_y = np.random.randint(y_range[0], y_range[1])
-        agents[random_y, random_x] = AgentPresence.PRESENT
-    
-    return agents
 
 def _place_victims(
         x: int, y: int,

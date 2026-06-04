@@ -45,7 +45,9 @@ class Metric:
         # Fraction of traversable cells the agent has ever observed. [0, 1] per agent.
         self.area_explored: dict[Agent, float] = {}
         self.total_traversable: int = 0
-        self.total_explored: float = 0.0
+
+        # Supervisory metrics
+        self.total_explored: float = 0.0 # fraction of total traversable area explored by all agents combined, accounting for overlaps
 
         # Number of times each agent has reached a state defined as "infeasible" by its controller
         self.infeasible_states: dict[Agent, int] = {}

@@ -4,3 +4,4 @@ pytest.ini
 .DS_Store
 saved_runs/private
 .coverage
+.csv

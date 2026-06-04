@@ -1,11 +1,20 @@
+import concurrent.futures
+from turtle import pd
 from matplotlib import ticker
 import numpy as np
 import logging
 from numba import njit
 import time
 import matplotlib.pyplot as plt
+from typing import TYPE_CHECKING
 
-from src.metric import MetricInTime
+from .constants import Capabilities, StoppingCondition, MapConfig
+from .metric import Metric, MetricInTime
+
+if TYPE_CHECKING:
+    from .simulator import Simulator
+    from .agents.task_mpc import TaskMpcAgent
+    from .supervisor import Supervisor
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +32,11 @@ def setup_logging(is_debug: bool):
     logging.getLogger('PIL').setLevel(logging.WARNING)
 
 @njit(debug=False, cache=True)
-def fast_bfs_array(start_x, start_y, target_x, target_y, traversability, victims, fire, untraversable_val, victim_present_val, fire_burning_val):
+def fast_bfs_array(start_x, start_y, 
+                   target_x, target_y, 
+                   traversability, victims, fire, 
+                   untraversable_val, victim_present_val, fire_burning_val, agent_present_val
+                   ) -> np.ndarray:
     height, width = traversability.shape
     
     if start_x == target_x and start_y == target_y:
@@ -104,55 +117,92 @@ def warmup_numba_compilers():
         fire=dummy_matrix, 
         untraversable_val=1,  # Dummy ints
         victim_present_val=1,
-        fire_burning_val=1   
+        fire_burning_val=1,
+        agent_present_val=1
     )
     
     elapsed = time.perf_counter() - start_time
     logger.info(f"Numba warmup complete. Compilation took {elapsed:.2f}s.")
 
-def plot_total_exploration(metric_history: list[MetricInTime]):
+def plot_total_exploration(metric_history: list, has_supervisor: bool,ax=None):
     if not metric_history:
         print("No metric history to plot.")
         return
+    
+    # If no axis is provided, grab the current one (keeps it backwards-compatible!)
+    if ax is None:
+        ax = plt.gca()
 
     time_steps = [m.step for m in metric_history]
     total_explored = [m.total_explored for m in metric_history]
-
-    plt.figure(figsize=(10, 6))
 
     agents = list(metric_history[0].area_explored.keys())
     for agent in agents:
         agent_explored = [m.area_explored.get(agent, 0.0) for m in metric_history]
         agent_name = getattr(agent, 'name', f"Agent {id(agent)}") 
-        plt.plot(time_steps, agent_explored, linestyle='--', alpha=0.4, label=f'{agent_name}')
+        ax.plot(time_steps, agent_explored, linestyle='--', alpha=0.4, label=f'{agent_name}')
 
-    plt.plot(time_steps, total_explored, color='blue', linewidth=2.5, label='Total Swarm Exploration')
-    plt.fill_between(time_steps, total_explored, color='blue', alpha=0.05)
+    title = "Total Swarm Exploration"
+    if has_supervisor:
+        title += " (with Supervisor)"
+    ax.plot(time_steps, total_explored, color='blue', linewidth=2.5, label=title)
+    ax.fill_between(time_steps, total_explored, color='blue', alpha=0.05)
 
     full_exploration_step = next((m.step for m in metric_history if m.total_explored >= 0.999), None)
     if full_exploration_step is not None:
-        plt.axvline(x=full_exploration_step, color='green', linestyle=':', linewidth=2)
-        plt.text(full_exploration_step, 0.05, f' 100% Explored\n (Step {full_exploration_step})', 
+        ax.axvline(x=full_exploration_step, color='green', linestyle=':', linewidth=2)
+        ax.text(full_exploration_step, 0.05, f' 100% Explored\n (Step {full_exploration_step})', 
                  color='green', verticalalignment='bottom')
 
     final_metric = metric_history[-1]
     
     if final_metric.time_to_all_found is not None:
         t_all = final_metric.time_to_all_found        
-        plt.axvline(x=t_all, color='red', linestyle='-.', linewidth=1.5, alpha=0.7)
-        plt.text(t_all, 0.05, f' All Victims Found\n (Step {final_metric.time_to_all_found})', color='red')
+        ax.axvline(x=t_all, color='red', linestyle='-.', linewidth=1.5, alpha=0.7)
+        ax.text(t_all, 0.05, f' All Victims Found\n (Step {final_metric.time_to_all_found})', color='red')
 
-    plt.xlabel("Time Step", fontsize=12)
-    plt.ylabel("Area Explored", fontsize=12)
-    plt.title("Swarm Exploration Progress & Milestones", fontsize=14, fontweight='bold')
+    ax.set_xlabel("Time Step", fontsize=12)
+    ax.set_ylabel("Area Explored", fontsize=12)
+    ax.set_title("Swarm Exploration Progress", fontsize=14, fontweight='bold')
     
-    plt.gca().yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1.0))
-    plt.ylim(0, 1.05) 
-    plt.xlim(0, max(time_steps) if time_steps else 1)
-    plt.grid(True, linestyle='--', alpha=0.6)
+    ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1.0))
+    ax.set_ylim(0, 1.05) 
+    ax.set_xlim(0, max(time_steps) if time_steps else 1)
+    ax.grid(True, linestyle='--', alpha=0.6)
     
-    plt.legend(loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0.)
-    
+    ax.legend(loc='upper left')
+
+def plot_all(metric_history: list[MetricInTime], has_supervisor: bool):
+    fig, (ax1) = plt.subplots(1, 1, figsize=(7, 6))
+
+    plot_total_exploration(metric_history, has_supervisor, ax=ax1)
+
+    # Adjust the layout so labels don't overlap, then show the combined plot
     plt.tight_layout()
-
     plt.show()
+
+def extract_useful_run_metrics(metric_history: list[MetricInTime]) -> dict:
+    """
+    Extracts data from the metric history that is useful for supervisory performance analysis
+    """
+    if not metric_history:
+        return {}
+    
+    metrics = {
+        "time_to_50": None, "time_to_70": None, "time_to_80": None,
+        "time_to_85": None, "time_to_90": None,
+        "time_to_all_found": metric_history[-1].time_to_all_found,
+        "total_steps": metric_history[-1].step,
+        "final_exploration": metric_history[-1].total_explored,
+        "seed": None,
+        "mode": None
+    }
+
+    for m in metric_history:
+        if m.total_explored >= 0.50 and metrics["time_to_50"] is None: metrics["time_to_50"] = m.step
+        if m.total_explored >= 0.70 and metrics["time_to_70"] is None: metrics["time_to_70"] = m.step
+        if m.total_explored >= 0.80 and metrics["time_to_80"] is None: metrics["time_to_80"] = m.step
+        if m.total_explored >= 0.85 and metrics["time_to_85"] is None: metrics["time_to_85"] = m.step
+        if m.total_explored >= 0.90 and metrics["time_to_90"] is None: metrics["time_to_90"] = m.step
+            
+    return metrics

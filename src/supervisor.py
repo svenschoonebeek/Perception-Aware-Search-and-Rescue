@@ -379,7 +379,8 @@ class Supervisor:
                              self.shared_belief.traversability.matrix,
                              self.shared_belief.vulnerability.matrix,
                              self.shared_belief.fire.matrix,
-                             TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, FireLevel.BURNING.value)
+                             TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, 
+                             FireLevel.BURNING.value, AgentPresence.PRESENT.value)
         return [(int(pt[0]), int(pt[1])) for pt in path]
 
     def _visualize_frontiers(self, frontier_mask: np.ndarray, centroids: list[tuple[int, int, float, int]]) -> None:        

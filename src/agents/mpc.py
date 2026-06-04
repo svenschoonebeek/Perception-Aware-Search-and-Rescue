@@ -80,7 +80,7 @@ class MpcAgent(Agent):
 
         return best_sequence[0]
     
-    def _predict_next_state(self, action: AgentAction, depth: int) -> "MpcAgent | None": # <- Apparently how to do forward declaration
+    def _predict_next_state(self, action: AgentAction, depth: int) -> Self | None:
         """
         Predicts the state resulting from the given action, unless said prediction would fall outside the admissible set X
         Does not check whether the predicted state violates constraints (see self._is_feasible)

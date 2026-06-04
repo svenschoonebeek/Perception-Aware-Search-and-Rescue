@@ -132,5 +132,4 @@ class MapConfig:
     max_room_length: int = 12
     min_tunnel_thickness: int = 1
     max_tunnel_thickness: int = 3
-    num_agents: int = 0
     num_victims: int = 2

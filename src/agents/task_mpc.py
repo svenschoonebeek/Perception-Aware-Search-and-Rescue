@@ -104,8 +104,11 @@ class TaskMpcAgent(MpcAgent):
         if len(self.current_path) > 0:
             min_dist = float('inf')
             closest_idx = 0
-            
-            for i, (px, py) in enumerate(self.current_path):
+
+            search_window = min(10, len(self.current_path))
+
+            for i in range(search_window):
+                px, py = self.current_path[i]
                 dist = np.sqrt((px - self.x)**2 + (py - self.y)**2)
                 if dist < min_dist:
                     min_dist = dist
@@ -133,6 +136,15 @@ class TaskMpcAgent(MpcAgent):
                 return False
         return True
 
+    def _predict_next_state(self, action: AgentAction, depth: int) -> Self | None:
+        target_x, target_y = self._target_cell(action)
+        
+        if 0 <= target_x < self.world_width and 0 <= target_y < self.world_height:
+            if (self.x, self.y) != (target_x, target_y) and self.perception.agents.matrix[target_y, target_x] > 0:
+                return None
+                
+        return super()._predict_next_state(action, depth)
+    
     def _is_passible(self, target_cell: tuple[int, int]) -> bool:
         """
         Decides whether a cell is passible
@@ -286,8 +298,10 @@ class TaskMpcAgent(MpcAgent):
         
         min_dist = float('inf')
         closest_idx = 0
+        search_window = min(10, len(self.current_path))
         
-        for i, (px, py) in enumerate(self.current_path):
+        for i in range(search_window):
+            px, py = self.current_path[i]
             dist = np.sqrt((px - self.x)**2 + (py - self.y)**2)
             if dist < min_dist:
                 min_dist = dist
@@ -310,5 +324,6 @@ class TaskMpcAgent(MpcAgent):
                              self.perception.traversability.matrix,
                              self.perception.vulnerability.matrix,
                              self.perception.fire.matrix,
-                             TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, FireLevel.BURNING.value)
+                             TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, 
+                             FireLevel.BURNING.value, AgentPresence.PRESENT.value)
         return [(int(pt[0]), int(pt[1])) for pt in path]
