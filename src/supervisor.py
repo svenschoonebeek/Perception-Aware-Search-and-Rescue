@@ -6,6 +6,7 @@ import logging
 
 from .util import fast_bfs_array
 from .agent import Agent
+from .agents.victim import Victim
 from .state import State
 from .constants import *
 from scipy.ndimage import binary_dilation, distance_transform_edt, label, convolve
@@ -26,13 +27,14 @@ class Supervisor:
         self.shared_belief.traversability.matrix = np.full((height, width), TraversabilityLevel.TRAVERSABLE)
         self.global_explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the supervisor has received information about
         
-        self.impatience_threshold = impatiance_threshold
-        self.decay = decay # Certainty decay per time step [0,1]
+        self.impatience_threshold: int = impatiance_threshold
+        self.decay: float = decay # Certainty decay per time step [0,1]
         self.unresolved_events: list[InterventionEvent] = [] # A list of events reported by agents that the supervisor can respond to
-        self.rescue_victims = rescue_victims # whether the supervisor should assign rescue tasks when victims are found
+        self.rescue_victims: bool = rescue_victims # whether the supervisor should assign rescue tasks when victims are found
 
         self.agent_tracker: dict[str, AgentInfo] = {} # tracks necessary information for each agent, used in conflict checking
-        self.task_backlog: set[Task] = set() # used for persistent rescue tasks 
+        self.task_backlog: set[Task] = set() # used for persistent rescue tasks
+        self.victim_tracker: dict[str, VictimInfo] = {}
 
     def requires_intervention(self) -> bool:
         """
@@ -50,14 +52,17 @@ class Supervisor:
         """
         self.unresolved_events.append(event)
     
-    def update_belief(self, agent_scans: list[Scan]) -> None:
+    def update_belief(self, agent_scans: list[Scan], victims_list: list[Victim]) -> None:
         """
         Updates the shared belief state based on the agent scans received
         """
         self.shared_belief.confidence.matrix = np.maximum(self.shared_belief.confidence.matrix - self.decay, 0) # vectorized confidence decay
         
         for agent_name, agent_info in self.agent_tracker.items():
-            logger.debug(f"Agent {agent_name} is tracked with task {agent_info.task.task_type} with target {agent_info.task.x}, {agent_info.task.y} at position ({agent_info.x}, {agent_info.y})")
+            logger.debug(f"Agent {agent_name} is tracked with task {agent_info.task.type} with target {agent_info.task.x}, {agent_info.task.y} at position ({agent_info.x}, {agent_info.y})")
+        for vid, victim_info in self.victim_tracker.items():
+            logger.debug(f"Victim {vid} is tracked with state {victim_info.state} at position ({victim_info.x}, {victim_info.y})")
+        
         for scan in agent_scans:
             if scan.agent_name not in self.agent_tracker:
                 self.agent_tracker[scan.agent_name] = AgentInfo(scan.agent_x, scan.agent_y, Task(TaskType.IDLE), 0)
@@ -65,7 +70,7 @@ class Supervisor:
                 self.agent_tracker[scan.agent_name].x = scan.agent_x
                 self.agent_tracker[scan.agent_name].y = scan.agent_y
 
-            if np.all(self.global_explored[scan.ys, scan.xs]) and self.agent_tracker[scan.agent_name].task.task_type == TaskType.IDLE:
+            if np.all(self.global_explored[scan.ys, scan.xs]) and self.agent_tracker[scan.agent_name].task.type == TaskType.IDLE:
                 self.agent_tracker[scan.agent_name].impatience += 1
             else:
                 self.agent_tracker[scan.agent_name].impatience = 0
@@ -73,13 +78,21 @@ class Supervisor:
             self.global_explored[scan.ys, scan.xs] = True
 
             for x, y, trvs, vuln, vict, agnt, fire, conf in zip(scan.xs, scan.ys, scan.traversability, scan.vulnerability, scan.victims, scan.agents, scan.fire, scan.confidence):
-                if vict == VictimPresence.PRESENT and not self.shared_belief.victims[y][x] == VictimPresence.PRESENT:
-                    logger.debug(f"Supervisor detected a victim at ({x}, {y}) based on scan from {scan.agent_name}. Triggering critical victim event.")
-                    self.trigger_event(InterventionEvent(
-                        type=EventType.VICTIM_FOUND,
-                        description=f"Victim found at ({x}, {y}) by {scan.agent_name}",
-                        data={"x": x, "y": y}
-                    ))
+                if vict == VictimPresence.PRESENT:
+                    found_victim = next((v for v in victims_list if v.x == x and v.y == y), None)
+                    if found_victim is not None:
+                        vid = found_victim.name
+                        if vid not in self.victim_tracker:
+                            logger.debug(f"Supervisor detected {vid} at ({x}, {y}) based on scan from {scan.agent_name}. Triggering critical victim event.")
+                            self.victim_tracker[vid] = VictimInfo(name=vid, x=x, y=y, state=VictimState.ROAMING)
+                            self.trigger_event(InterventionEvent(
+                                type=EventType.VICTIM_FOUND,
+                                description=f"{vid} found at ({x}, {y}) by {scan.agent_name}",
+                                data={"x": x, "y": y, "victim_id": vid}
+                            ))
+                        self.victim_tracker[vid].x = x
+                        self.victim_tracker[vid].y = y
+
                 self.shared_belief.traversability[y][x] = trvs
                 self.shared_belief.vulnerability[y][x] = vuln
                 self.shared_belief.victims[y][x] = vict
@@ -102,7 +115,7 @@ class Supervisor:
 
     def check_explore_tasks(self) -> None:
         for target_agent_name, target_agent_info in self.agent_tracker.items():
-            if target_agent_info.task.task_type == TaskType.EXPLORE:
+            if target_agent_info.task.type == TaskType.EXPLORE:
                 tx, ty = target_agent_info.task.x, target_agent_info.task.y
                 for checking_agent_name, checking_agent_info in self.agent_tracker.items():
                     ax, ay = checking_agent_info.x, checking_agent_info.y
@@ -139,7 +152,8 @@ class Supervisor:
                 extract_frontiers_flag = True
             
             elif event.type == EventType.VICTIM_FOUND and self.rescue_victims:
-                rescue_task = Task(TaskType.RESCUE, event.data["x"], event.data["y"])
+                vid = event.data["victim_id"]
+                rescue_task = Task(TaskType.RESCUE, x=event.data["x"], y=event.data["y"], victim_id=vid)
                 self.task_backlog.add(rescue_task)
                 all_agents_bid_flag = True
             
@@ -153,7 +167,15 @@ class Supervisor:
                 logger.debug(f"Agent {completed_agent_name} completed a task")
                 self._set_agent_task(next(a for a in agents if a.name == completed_agent_name), Task(TaskType.IDLE), [])
                 # doesn't get added to the task list because it is just an update for the tracker or agent
-        
+            
+            elif event.type == EventType.INITIALIZING_RESCUE:
+                self.agent_tracker[event.data["agent"]].task.search_status = SearchStatus.RESCUING
+                self.victim_tracker[event.data["victim_id"]].state = VictimState.BEING_RESCUED
+            
+            elif event.type == EventType.VICTIM_RESCUED:
+                self.victim_tracker[event.data["victim_id"]].state = VictimState.RESCUED
+                self.agent_tracker[event.data["agent"]].task = Task(TaskType.IDLE)
+
         if extract_frontiers_flag:
             frontiers = self._extract_frontiers()
             # frontiers = self._create_voronoi_partition()
@@ -161,7 +183,7 @@ class Supervisor:
                 unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy, fweight, froom_id))
 
         unassigned_tasks.extend(self.task_backlog)
-        assignable_agents = [a for a in agents if a.assignable and self.agent_tracker[a.name].task.task_type != TaskType.RESCUE]
+        assignable_agents = [a for a in agents if a.assignable and self.agent_tracker[a.name].task.type != TaskType.RESCUE]
         bidding_agents = [a for a in assignable_agents if a.name in bidding_agent_names]
         if all_agents_bid_flag:
             bidding_agents = assignable_agents
@@ -195,12 +217,12 @@ class Supervisor:
                     if any(a.name == agent_name for a in available_agents):
                         continue
 
-                    if agent_info.task.task_type == TaskType.EXPLORE:
+                    if agent_info.task.type == TaskType.EXPLORE:
                         task_location = (agent_info.task.x, agent_info.task.y)
                         distance_to_task = np.sqrt((task.x - task_location[0])**2 + (task.y - task_location[1])**2)
                         burgard_penalty += w_close_to_target * np.exp(-distance_to_task / spatial_decay_scale) # penalize frontiers close to other agents' current tasks
                     
-                    elif agent_info.task.task_type == TaskType.IDLE:
+                    elif agent_info.task.type == TaskType.IDLE:
                         physical_dist = np.sqrt((task.x - agent_info.x)**2 + (task.y - agent_info.y)**2)
                         burgard_penalty += w_close_to_agent * np.exp(-physical_dist / spatial_decay_scale)
                 
@@ -209,11 +231,11 @@ class Supervisor:
                     travel_cost = np.sqrt((agent.x - task.x)**2 + (agent.y - task.y)**2)
                     # travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
                     capabilities = agent.get_capabilities()
-                    if task.task_type == TaskType.EXPLORE:
+                    if task.type == TaskType.EXPLORE:
                         if capabilities.exploration == 0:
                             continue
                         base_reward = 100 * capabilities.exploration
-                    elif task.task_type == TaskType.RESCUE:
+                    elif task.type == TaskType.RESCUE:
                         if capabilities.rescuing == 0:
                             continue
                         base_reward = 10000 * capabilities.rescuing
@@ -236,9 +258,12 @@ class Supervisor:
                 continue
 
             self._set_agent_task(winning_agent, best_task, best_path)
-            logger.debug(f"Auction assigned {best_task.task_type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
+            logger.debug(f"Auction assigned {best_task.type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
             logger.debug(f"Assigned path {best_path}")
 
+            if best_task.type == TaskType.RESCUE:
+                self.victim_tracker[best_task.victim_id] = VictimInfo(name=best_task.victim_id, x=best_task.x, y=best_task.y, state=VictimState.SOUGHT)
+            
             claimed_tasks.append(best_task)
             unassigned_tasks.remove(best_task)
             available_agents.remove(winning_agent)

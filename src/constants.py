@@ -43,6 +43,19 @@ class VictimPresence(IntEnum):
     NOT_PRESENT = 0
     PRESENT = 1
 
+class VictimState(Enum):
+    ROAMING = "roaming"             # found by an agent but not yet being rescued
+    SOUGHT = "sought"               # being actively sought by an agent but not yet found
+    BEING_RESCUED = "being_rescued" # being rescued by an agent
+    RESCUED = "rescued"             # fully rescued
+
+@dataclass
+class VictimInfo():
+    name: str
+    x: int
+    y: int
+    state: VictimState
+
 @dataclass
 class Capabilities:
     exploration: float = 1.0
@@ -50,6 +63,8 @@ class Capabilities:
 
 class EventType(Enum):
     VICTIM_FOUND = "victim_found"
+    INITIALIZING_RESCUE = "initializing_rescue"
+    VICTIM_RESCUED = "victim_rescued"
     PATH_BLOCKED = "path_blocked"
     SPATIAL_CONFLICT = "spatial_conflict"
     LOW_PROGRESS = "low_progress"
@@ -72,20 +87,21 @@ class TaskType(Enum):
     
 @dataclass
 class Task:
-    task_type: TaskType
+    type: TaskType
     x: int = -1
     y: int = -1
     weight: float = 1.0
     room_id: int = -1
+    victim_id: str = ""
     search_status: SearchStatus = SearchStatus.SEARCHING
 
     def __hash__(self):
-        return hash((self.task_type, self.x, self.y))
+        return hash((self.type, self.x, self.y))
 
     def __eq__(self, other):
         if not isinstance(other, Task):
             return False
-        return (self.task_type == other.task_type and 
+        return (self.type == other.type and 
                 self.x == other.x and 
                 self.y == other.y)
 

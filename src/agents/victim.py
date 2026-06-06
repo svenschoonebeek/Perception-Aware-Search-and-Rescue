@@ -33,7 +33,9 @@ class AgeGroup(Enum):
 class Victim(Agent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int,
                  personality: Personality = Personality.SELFLESS,
-                 age_group: AgeGroup = AgeGroup.ADULT):
+                 age_group: AgeGroup = AgeGroup.ADULT, 
+                 is_static: bool = False,
+                 seed: int | None = None):
         super().__init__(
             name=name, x=x, y=y, width=width, height=height,
             decay=0.0,
@@ -43,7 +45,8 @@ class Victim(Agent):
         )
         self.personality = personality
         self.age_group = age_group
-        self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value]
+        self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value] if not is_static else 0.0
+        self.rng = np.random.default_rng(seed)
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -61,7 +64,7 @@ class Victim(Agent):
 
         # Speed: danger triggers panic → higher move probability
         move_prob = min(1.0, self._base_move_prob * (_DANGER_SPEED_MULTIPLIER if in_danger else 1.0))
-        if np.random.random() > move_prob:
+        if self.rng.random() >= move_prob:
             return AgentAction.WAIT
 
         # Personality shifts selfish when danger is perceived (paper §IV-A)
@@ -175,7 +178,7 @@ class Victim(Agent):
             if a != AgentAction.WAIT and self._cell_safety_score(*self._target_cell(a)) >= 3
         ]
         if safe_moves:
-            return np.random.choice(safe_moves)
+            return self.rng.choice(safe_moves)
 
         return AgentAction.WAIT
 

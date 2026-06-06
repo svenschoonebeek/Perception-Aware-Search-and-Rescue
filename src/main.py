@@ -29,21 +29,21 @@ def main():
                        , initial_fire_points=1, room_vulnerability_probability=0.1, tunnel_vulnerability_probability=0.1, fire_spread_rate=0.01, fire_duration=100)
     # config = MapConfig(num_rooms=12, num_victims=10, room_vulnerability_probability=0.1, room_vulnerability_severity=0.2, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2,max_tunnel_thickness=3, fire_spread_rate=0.02, fire_duration=100, initial_fire_points=0)
 
-    sim.generate_ground_truth(config,806960747) # 281871615 224833043 48617497
+    sim.generate_ground_truth(config,) # 281871615 224833043 48617497
     
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
-    agent1 = TaskMpcAgent("tasker1", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=1.0))
+    agent1 = TaskMpcAgent("tasker1", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=1.0))
     # agent1 = MpcAgent("mpc1", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False)
     # agent1 = RandAgent("randy", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
     sim.add_agent(agent1)
 
-    agent2 = TaskMpcAgent("tasker2", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=1.0))
+    agent2 = TaskMpcAgent("tasker2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=1.0))
     # agent2 = MpcAgent("mpc2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 4, False)
     # agent2 = RandAgent("rand2", 0, 1, WIDTH, HEIGHT, 0.01, 0.9, 7, False)
     sim.add_agent(agent2)
 
-    agent3 = TaskMpcAgent("tasker3", 0, 3, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=1.0))
+    agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=1.0))
     # agent3 = MpcAgent("mpc3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False)
     sim.add_agent(agent3)
 
@@ -52,7 +52,7 @@ def main():
     sim.add_agent(agent4)
 
     supervisor = Supervisor(WIDTH, HEIGHT, 0.01, 8, False)
-    # sim.set_supervisor(supervisor)
+    sim.set_supervisor(supervisor)
 
     # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, sim.ground_truth.victims, sim.ground_truth.vulnerability, sim.ground_truth.fire)
 

@@ -28,6 +28,7 @@ class Simulator:
         self.supervisor: Supervisor | None = None
         self.tripping = True
         self.stopping_condition: StoppingCondition = stopping_condition
+        self.static_victims = True # whether victims are static or move around
 
     def set_supervisor(self, supervisor: Supervisor) -> None:
         self.supervisor = supervisor
@@ -85,11 +86,11 @@ class Simulator:
             agent_scans.append(agent.scan(self.ground_truth))
             agent.check_status(self.supervisor, self.ground_truth)
             if (task := agent.get_current_task()) is not None:
-                logger.debug(f"Agent {agent.name} has task {task.task_type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
+                logger.debug(f"Agent {agent.name} has task {task.type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
                 logger.debug(f"has path: {agent.get_current_path()}")
         
         if self.supervisor is not None:
-            self.supervisor.update_belief(agent_scans)
+            self.supervisor.update_belief(agent_scans, self.victims)
             self.supervisor.check_for_impatience()
             self.supervisor.check_explore_tasks()
 
@@ -445,7 +446,7 @@ class Simulator:
         for i, (vy, vx) in enumerate(zip(ys, xs)):
             personality = personalities[np.random.randint(len(personalities))]
             age_group = age_groups[np.random.randint(len(age_groups))]
-            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group)
+            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, seed=seed)
             v.scan(self.ground_truth)
             self.victims.append(v)
 

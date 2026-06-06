@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 
 from src.util import fast_bfs_array
-from src.constants import TraversabilityLevel, VictimPresence, FireLevel
+from src.constants import TraversabilityLevel, VictimPresence, FireLevel, AgentPresence
 class UtilTest(unittest.TestCase):
     
     @classmethod
@@ -11,7 +11,7 @@ class UtilTest(unittest.TestCase):
         Warms up the Numba compiler before the tests
         """
         dummy = np.zeros((5, 5), dtype=np.int8)
-        fast_bfs_array(0, 0, 1, 1, dummy, dummy, dummy, TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING)
+        fast_bfs_array(0, 0, 1, 1, dummy, dummy, dummy, TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING, AgentPresence.PRESENT)
 
     def test_open_path_validity(self):
         """Tests that a clear path correctly starts and ends at the right coordinates."""
@@ -24,7 +24,7 @@ class UtilTest(unittest.TestCase):
         
         path = fast_bfs_array(
             start_x, start_y, target_x, target_y, 
-            traversability, victims, fire, TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING
+            traversability, victims, fire, TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING, AgentPresence.PRESENT
         )
         
         self.assertGreater(len(path), 0, "Failed to find an open path.")
@@ -48,7 +48,7 @@ class UtilTest(unittest.TestCase):
         path = fast_bfs_array(
             start_x, start_y, target_x, target_y, 
             traversability, victims, fire,
-            TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING
+            TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING, AgentPresence.PRESENT
         )
         
         self.assertGreater(len(path), 0, "Failed to find a path around the obstacle.")
@@ -77,7 +77,7 @@ class UtilTest(unittest.TestCase):
         path = fast_bfs_array(
             start_x, start_y, target_x, target_y, 
             traversability, victims, fire,
-            TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING
+            TraversabilityLevel.UNTRAVERSABLE, VictimPresence.PRESENT, FireLevel.BURNING, AgentPresence.PRESENT
         )
         
         self.assertEqual(len(path), 0, "incorrectly found a path when target was boxed in")

@@ -192,5 +192,5 @@ class SupervisorTest(unittest.TestCase):
 
         self.assertEqual(agent1.current_task.x, 4)
         
-        self.assertEqual(agent2.current_task.task_type, TaskType.IDLE)
+        self.assertEqual(agent2.current_task.type, TaskType.IDLE)
         self.assertEqual(agent2.current_task.x, -1)

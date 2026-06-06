@@ -31,7 +31,7 @@ class TaskMpcAgent(MpcAgent):
         copy = super().copy()
 
         copy.current_path = list(self.current_path)
-        copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
+        copy.current_task = Task(self.current_task.type, self.current_task.x, self.current_task.y, victim_id=self.current_task.victim_id, search_status=self.current_task.search_status)
         copy.capabilities = Capabilities(self.capabilities.exploration, self.capabilities.rescuing)
         copy.conflict_timeout = self.conflict_timeout
         copy.spatial_conflicts = self.spatial_conflicts
@@ -78,7 +78,7 @@ class TaskMpcAgent(MpcAgent):
         if supervisor is None:
             return
         
-        if self.current_task.task_type == TaskType.EXPLORE:
+        if self.current_task.type == TaskType.EXPLORE:
             path_valid = self._check_path_blocked(supervisor)
             if not path_valid:
                 return
@@ -90,19 +90,25 @@ class TaskMpcAgent(MpcAgent):
                     data={"agent": self.name}
                 ))
                 self._return_to_idle()
-        elif self.current_task.task_type == TaskType.RESCUE:
+        elif self.current_task.type == TaskType.RESCUE:
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
             if distance_to_target <= 1.0:
                 if self.current_task.search_status == SearchStatus.SEARCHING:
                     self.current_task.search_status = SearchStatus.RESCUING
+                    supervisor.trigger_event(InterventionEvent(
+                        type=EventType.INITIALIZING_RESCUE,
+                        description=f"{self.name} found a victim at ({self.current_task.x}, {self.current_task.y}) and is initializing rescue.",
+                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                    ))
                     self.current_task.x, self.current_task.y = 0, 0 # go to exit, currently hardcoded 0,0
                     self.current_path = self._calculate_path(self.x, self.y, self.current_task.x, self.current_task.y)
-                    # TODO use maria's implementation, also think about how simulator will handle this
+                    # TODO use maria's implementation and her "completed rescue" indication
+                
                 elif self.current_task.search_status == SearchStatus.RESCUING:
                     supervisor.trigger_event(InterventionEvent(
-                        type=EventType.TASK_COMPLETED,
+                        type=EventType.VICTIM_RESCUED,
                         description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
-                        data={"agent": self.name}
+                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
                     ))
                     self._return_to_idle()
 
@@ -224,7 +230,7 @@ class TaskMpcAgent(MpcAgent):
         Returns:
         The objective value
         """
-        if (self.current_task.task_type == TaskType.EXPLORE or self.current_task.task_type == TaskType.RESCUE):
+        if (self.current_task.type == TaskType.EXPLORE or self.current_task.type == TaskType.RESCUE):
             return 0
         
         w_exploration = 300
@@ -239,7 +245,7 @@ class TaskMpcAgent(MpcAgent):
         Returns:
         The objective value
         """
-        if (self.current_task.task_type == TaskType.EXPLORE or self.current_task.task_type == TaskType.RESCUE):
+        if (self.current_task.type == TaskType.EXPLORE or self.current_task.type == TaskType.RESCUE):
             return self._objective_targeted()
         
         return self._objective_wander()
@@ -337,7 +343,7 @@ class TaskMpcAgent(MpcAgent):
         path = fast_bfs_array(start_x, start_y,
                              target_x, target_y,
                              self.perception.traversability.matrix,
-                             self.perception.vulnerability.matrix,
+                             self.perception.victims.matrix,
                              self.perception.fire.matrix,
                              TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, 
                              FireLevel.BURNING.value, AgentPresence.PRESENT.value)
