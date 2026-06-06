@@ -41,6 +41,8 @@ class Agent:
         self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has scanned at any point in the run
         self.discovered: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent scanned for the first time this step
 
+        self.assignable = False # Whether the supervisor can assign a task to this agent
+
     def copy(self) -> Self:
         cls = type(self)
         copy = cls.__new__(cls)
@@ -62,6 +64,8 @@ class Agent:
         copy.move_history = self.move_history.copy()
         copy.explored = np.copy(self.explored)
         copy.discovered = np.copy(self.discovered)
+
+        copy.assignable = self.assignable
 
         return copy
 
@@ -154,6 +158,12 @@ class Agent:
         Sets the current path of the agent, to be used by the supervisor for task allocation
         """
         pass
+
+    def get_spatial_conflicts(self) -> int:
+        """
+        Returns the number of spatial conflicts the agent has been involved in, to be used by the supervisor for task allocation
+        """
+        return 0
 
     def get_capabilities(self) -> Capabilities:
         """

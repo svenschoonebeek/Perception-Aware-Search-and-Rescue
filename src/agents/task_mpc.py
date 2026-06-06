@@ -23,6 +23,9 @@ class TaskMpcAgent(MpcAgent):
         
         self.capabilities = capabilities # how good the agent is at exploring vs rescuing
         self.conflict_timeout = 0
+        self.spatial_conflicts = 0
+
+        self.assignable = True # can be assigned tasks by the supervisor
     
     def copy(self) -> Self:
         copy = super().copy()
@@ -31,6 +34,8 @@ class TaskMpcAgent(MpcAgent):
         copy.current_task = Task(self.current_task.task_type, self.current_task.x, self.current_task.y)
         copy.capabilities = Capabilities(self.capabilities.exploration, self.capabilities.rescuing)
         copy.conflict_timeout = self.conflict_timeout
+        copy.spatial_conflicts = self.spatial_conflicts
+        copy.assignable = self.assignable
 
         return copy
 
@@ -52,6 +57,12 @@ class TaskMpcAgent(MpcAgent):
         """
         return self.capabilities
     
+    def get_spatial_conflicts(self) -> int:
+        """
+        Returns the number of spatial conflicts the agent has been involved in, to be used by the supervisor for task allocation
+        """
+        return self.spatial_conflicts
+    
     def check_status(self, supervisor: Supervisor | None, state: State) -> None:
         """
         Checks whether the status of the agent, like if a target has been met, and triggers the corresponding event for the supervisor.
@@ -60,6 +71,10 @@ class TaskMpcAgent(MpcAgent):
         supervisor: the supervisor to trigger
         state: the true world (used for checking if close to another agent)
         """
+        self.conflict_timeout += 1
+        if (self.conflict_timeout >= 3):
+            self._check_for_spatial_conflict(supervisor, state)
+        
         if supervisor is None:
             return
         
@@ -90,17 +105,15 @@ class TaskMpcAgent(MpcAgent):
                         data={"agent": self.name}
                     ))
                     self._return_to_idle()
-                
 
-        self.conflict_timeout += 1
-        if (self.conflict_timeout >= 3):
-            self._check_for_spatial_conflict(supervisor, state)
-
-    def _check_path_blocked(self, supervisor: Supervisor):
+    def _check_path_blocked(self, supervisor: Supervisor | None):
         """
         Updates the path of the agent by removing already passed nodes and checks whether the path is blocked by a new obstacle/hazard.
         If it is, it returns to idle and triggers an event for the supervisor.
         """
+        if supervisor is None:
+            return False
+        
         if len(self.current_path) > 0:
             min_dist = float('inf')
             closest_idx = 0
@@ -173,7 +186,7 @@ class TaskMpcAgent(MpcAgent):
         return self.perception.traversability[target_cell_y][target_cell_x] == TraversabilityLevel.TRAVERSABLE # Didn't hit wall
 
 
-    def _check_for_spatial_conflict(self, supervisor: Supervisor, state: State):
+    def _check_for_spatial_conflict(self, supervisor: Supervisor | None, state: State):
         conflict_distance = self.scan_radius # could change this to be smaller
 
         visible = self._tiles_in_radius() & self._tiles_in_los(state)
@@ -187,12 +200,14 @@ class TaskMpcAgent(MpcAgent):
             distance = np.sqrt((self.x - x)**2 + (self.y - y)**2)
             if distance < conflict_distance:
                 logger.debug(f"{self.name} detected a spatial conflict with another agent.")
-                supervisor.trigger_event(InterventionEvent(
-                    type=EventType.SPATIAL_CONFLICT,
-                    description=f"{self.name} detected a spatial conflict locally.",
-                    data={"agent": self.name}
-                    ))
+                if supervisor is not None:
+                    supervisor.trigger_event(InterventionEvent(
+                        type=EventType.SPATIAL_CONFLICT,
+                        description=f"{self.name} detected a spatial conflict locally.",
+                        data={"agent": self.name}
+                        ))
                 self.conflict_timeout = 0
+                self.spatial_conflicts += 1
                 return
     
     def _return_to_idle(self) -> None:

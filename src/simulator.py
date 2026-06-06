@@ -100,6 +100,8 @@ class Simulator:
         self._update_victim_metrics()
         self._update_area_explored()
         self._update_infeasible_states()
+        self._update_inter_agent_distance()
+        self._update_spatial_conflict_count()
         self.metrics.record_snapshot()
 
         res = [self.ground_truth.copy()]
@@ -267,6 +269,8 @@ class Simulator:
         for agent in self.agents:
             union |= (agent.perception.victims.matrix == VictimPresence.PRESENT)
         found = int((truth & union).sum())
+        if found > self.metrics.victims_found:
+            self.metrics.individual_detection_times.append(self.metrics.steps_taken)
         self.metrics.victims_found = found
 
         if found > 0 and self.metrics.time_to_first_found is None:
@@ -305,6 +309,26 @@ class Simulator:
         for agent in self.agents:
             vulnerability = float(self.ground_truth.vulnerability[agent.y][agent.x])
             self.metrics.record_vulnerable_collision(agent, vulnerability)
+
+    def _update_spatial_conflict_count(self) -> None:
+        self.metrics.total_spatial_conflicts = 0
+        for _, a in enumerate(self.agents):
+            self.metrics.total_spatial_conflicts += a.get_spatial_conflicts()
+
+    def _update_inter_agent_distance(self) -> None:
+        if len(self.agents) < 2:
+            self.metrics.average_inter_agent_distance = 0.0
+            return
+        
+        total_distance = 0.0
+        count = 0
+        for i, agent_a in enumerate(self.agents):
+            for agent_b in self.agents[i+1:]:
+                dist = np.sqrt((agent_a.x - agent_b.x) ** 2 + (agent_a.y - agent_b.y) ** 2)
+                total_distance += dist
+                count += 1
+        
+        self.metrics.average_inter_agent_distance = total_distance / count if count > 0 else 0.0
 
     def _update_infeasible_states(self) -> None:
         for agent in self.agents:

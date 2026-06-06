@@ -1,11 +1,13 @@
-import concurrent.futures
-from turtle import pd
+import ast
+
+import pandas as pd
 from matplotlib import ticker
 import numpy as np
 import logging
 from numba import njit
 import time
 import matplotlib.pyplot as plt
+import seaborn as sns
 from typing import TYPE_CHECKING
 
 from .constants import Capabilities, StoppingCondition, MapConfig
@@ -72,9 +74,12 @@ def fast_bfs_array(start_x, start_y,
             nx, ny = cx + dx[i], cy + dy[i]
             if 0 <= nx < width and 0 <= ny < height:
                 if not visited[ny, nx]:
-                    if (traversability[ny, nx] != untraversable_val and 
+                    is_target = (nx == target_x and ny == target_y)
+                    is_passable = (traversability[ny, nx] != untraversable_val and 
                         victims[ny, nx] != victim_present_val and 
-                        fire[ny, nx] != fire_burning_val):
+                        fire[ny, nx] != fire_burning_val)
+                    
+                    if is_target or is_passable:
                         
                         visited[ny, nx] = True
                         parent_x[ny, nx] = cx
@@ -172,6 +177,104 @@ def plot_total_exploration(metric_history: list, has_supervisor: bool,ax=None):
     
     ax.legend(loc='upper left')
 
+def plot_total_spatial_conflicts(csv_filename: str, ax=None):
+    df = pd.read_csv(csv_filename)
+    
+    # If no axis is provided, create a new figure
+    is_standalone = ax is None
+    if is_standalone:
+        plt.figure(figsize=(6, 5))
+        ax = plt.gca()
+        sns.set_theme(style="ticks") 
+
+    sns.boxplot(
+        data=df, x="mode", y="total_spatial_conflicts", 
+        ax=ax, width=0.4, color="white", 
+        boxprops=dict(edgecolor="blue"),
+        whiskerprops=dict(color="black", linestyle="--"),
+        medianprops=dict(color="red")
+    )
+    
+    ax.set_title("Total Nr of Spatial Conflicts", fontsize=12, pad=10)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_ylim(bottom=-5)    
+    
+    if is_standalone:
+        plt.tight_layout()
+        plt.savefig("spatial_conflicts_boxplot.png", dpi=300) 
+        plt.show()
+
+def plot_victims_found(csv_filename: str, ax=None):
+    df = pd.read_csv(csv_filename)
+    
+    is_standalone = ax is None
+    if is_standalone:
+        plt.figure(figsize=(6, 5))
+        ax = plt.gca()
+        sns.set_theme(style="ticks") 
+
+    sns.boxplot(
+        data=df, x="mode", y="found_victims", 
+        ax=ax, width=0.4, color="white", 
+        boxprops=dict(edgecolor="blue"),
+        whiskerprops=dict(color="black", linestyle="--"),
+        medianprops=dict(color="red")
+    )
+    
+    ax.set_title("Total Nr of Victims Found", fontsize=12, pad=10)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_ylim(bottom=-5)    
+    
+    if is_standalone:
+        plt.tight_layout()
+        plt.savefig("victims_found_boxplot.png", dpi=300) 
+        plt.show()
+
+def plot_victim_detection_times(csv_filename: str, ax=None):
+    df = pd.read_csv(csv_filename)
+    
+    df['individual_detection_times'] = df['individual_detection_times'].apply(ast.literal_eval)
+    df_exploded = df.explode('individual_detection_times')
+    df_exploded['individual_detection_times'] = pd.to_numeric(df_exploded['individual_detection_times'])
+    
+    is_standalone = ax is None
+    if is_standalone:
+        plt.figure(figsize=(6, 5))
+        ax = plt.gca()
+        sns.set_theme(style="ticks") 
+
+    sns.boxplot(
+        data=df_exploded, x="mode", y="individual_detection_times", 
+        ax=ax, width=0.4, color="white", 
+        boxprops=dict(edgecolor="blue"),
+        whiskerprops=dict(color="black", linestyle="--"),
+        medianprops=dict(color="red")
+    )
+    
+    ax.set_title("Time of Detection", fontsize=12, pad=10)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_ylim(bottom=-5)    
+    
+    if is_standalone:
+        plt.tight_layout()
+        plt.savefig("victim_detection_times_boxplot.png", dpi=300) 
+        plt.show()
+
+def plot_boxes(csv_filename: str):
+    sns.set_theme(style="ticks") 
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    
+    plot_total_spatial_conflicts(csv_filename, ax=ax1)
+    plot_victims_found(csv_filename, ax=ax2)
+    plot_victim_detection_times(csv_filename, ax=ax3)
+    
+    plt.tight_layout()
+    plt.savefig("combined_metrics_boxplots.png", dpi=300)
+    plt.show()
+
 def plot_all(metric_history: list[MetricInTime], has_supervisor: bool):
     fig, (ax1) = plt.subplots(1, 1, figsize=(7, 6))
 
@@ -188,14 +291,22 @@ def extract_useful_run_metrics(metric_history: list[MetricInTime]) -> dict:
     if not metric_history:
         return {}
     
+    distances = [m.inter_agent_distance for m in metric_history if m.inter_agent_distance is not None]
+    run_avg_distance = float(np.mean(distances)) if distances else 0.0
+    
     metrics = {
         "time_to_50": None, "time_to_70": None, "time_to_80": None,
         "time_to_85": None, "time_to_90": None,
         "time_to_all_found": metric_history[-1].time_to_all_found,
         "total_steps": metric_history[-1].step,
         "final_exploration": metric_history[-1].total_explored,
+        "total_spatial_conflicts": metric_history[-1].total_spatial_conflicts,
+        "avg_inter_agent_distance": run_avg_distance,
         "seed": None,
-        "mode": None
+        "mode": None,
+        "avg_step_duration": None,
+        "found_victims": metric_history[-1].victims_found,
+        "individual_detection_times": metric_history[-1].individual_detection_times,
     }
 
     for m in metric_history:

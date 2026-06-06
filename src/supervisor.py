@@ -161,9 +161,10 @@ class Supervisor:
                 unassigned_tasks.append(Task(TaskType.EXPLORE, fx, fy, fweight, froom_id))
 
         unassigned_tasks.extend(self.task_backlog)
-        bidding_agents = [a for a in agents if a.name in bidding_agent_names and self.agent_tracker[a.name].task.task_type != TaskType.RESCUE]
+        assignable_agents = [a for a in agents if a.assignable and self.agent_tracker[a.name].task.task_type != TaskType.RESCUE]
+        bidding_agents = [a for a in assignable_agents if a.name in bidding_agent_names]
         if all_agents_bid_flag:
-            bidding_agents = agents
+            bidding_agents = assignable_agents
         self._run_task_auction(unassigned_tasks, bidding_agents)
 
 
@@ -209,8 +210,12 @@ class Supervisor:
                     # travel_cost = len(self._calculate_path(agent.x, agent.y, task.x, task.y))
                     capabilities = agent.get_capabilities()
                     if task.task_type == TaskType.EXPLORE:
+                        if capabilities.exploration == 0:
+                            continue
                         base_reward = 100 * capabilities.exploration
                     elif task.task_type == TaskType.RESCUE:
+                        if capabilities.rescuing == 0:
+                            continue
                         base_reward = 10000 * capabilities.rescuing
                     
                     total_utility = base_reward - travel_cost - burgard_penalty 
@@ -377,7 +382,7 @@ class Supervisor:
         path = fast_bfs_array(start_x, start_y,
                              target_x, target_y,
                              self.shared_belief.traversability.matrix,
-                             self.shared_belief.vulnerability.matrix,
+                             self.shared_belief.victims.matrix,
                              self.shared_belief.fire.matrix,
                              TraversabilityLevel.UNTRAVERSABLE.value, VictimPresence.PRESENT.value, 
                              FireLevel.BURNING.value, AgentPresence.PRESENT.value)

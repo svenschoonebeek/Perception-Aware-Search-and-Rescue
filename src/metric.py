@@ -24,6 +24,8 @@ class MetricInTime:
     area_explored: dict[Agent, float]
     total_explored: float
     inter_agent_distance: float
+    total_spatial_conflicts: int
+    individual_detection_times: list[int]
 
 
 class Metric:
@@ -50,6 +52,8 @@ class Metric:
         # Supervisory metrics
         self.total_explored: float = 0.0 # fraction of total traversable area explored by all agents combined, accounting for overlaps
         self.average_inter_agent_distance: float = 0.0
+        self.total_spatial_conflicts: int = 0
+        self.individual_detection_times: list[int] = [] # time steps at which each victim was found for the first time
 
         # Number of times each agent has reached a state defined as "infeasible" by its controller
         self.infeasible_states: dict[Agent, int] = {}
@@ -102,13 +106,15 @@ class Metric:
             total_traversable=self.total_traversable,
             total_explored=self.total_explored,
             inter_agent_distance=self.average_inter_agent_distance,
+            total_spatial_conflicts=self.total_spatial_conflicts,
             terrain_collisions=dict(self.terrain_collisions),
             victim_collisions=dict(self.victim_collisions),
             inter_agent_collisions=dict(self.inter_agent_collisions),
             fire_collisions=dict(self.fire_collisions),
             wait_actions=dict(self.wait_actions),
             damage=dict(self.damage),
-            area_explored=dict(self.area_explored)
+            area_explored=dict(self.area_explored),
+            individual_detection_times=list(self.individual_detection_times),
         )
 
     def record_snapshot(self) -> None:
