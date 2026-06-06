@@ -1,5 +1,4 @@
 from __future__ import annotations
-from collections import deque
 from typing import TYPE_CHECKING, cast
 import numpy as np
 import logging
@@ -9,7 +8,7 @@ from .agent import Agent
 from .agents.victim import Victim
 from .state import State
 from .constants import *
-from scipy.ndimage import binary_dilation, distance_transform_edt, label, convolve
+from scipy.ndimage import binary_dilation, distance_transform_edt, label
 from scipy.spatial.distance import cdist
 from scipy.cluster.vq import kmeans
 from skimage.morphology import skeletonize
@@ -211,8 +210,13 @@ class Supervisor:
             highest_utility = float('-inf')
 
             for task in unassigned_tasks:
-                burgard_penalty = 0.0
+                if task.type == TaskType.RESCUE:
+                    latest_victim_info = self.victim_tracker.get(task.victim_id)
+                    if latest_victim_info:
+                        task.x = latest_victim_info.x
+                        task.y = latest_victim_info.y
                 
+                burgard_penalty = 0.0
                 for agent_name, agent_info in self.agent_tracker.items():
                     if any(a.name == agent_name for a in available_agents):
                         continue
@@ -257,13 +261,13 @@ class Supervisor:
                 unassigned_tasks.remove(best_task)
                 continue
 
+            if best_task.type == TaskType.RESCUE:
+                self.victim_tracker[best_task.victim_id] = VictimInfo(name=best_task.victim_id, x=best_task.x, y=best_task.y, state=VictimState.SOUGHT)
+            
             self._set_agent_task(winning_agent, best_task, best_path)
             logger.debug(f"Auction assigned {best_task.type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
             logger.debug(f"Assigned path {best_path}")
 
-            if best_task.type == TaskType.RESCUE:
-                self.victim_tracker[best_task.victim_id] = VictimInfo(name=best_task.victim_id, x=best_task.x, y=best_task.y, state=VictimState.SOUGHT)
-            
             claimed_tasks.append(best_task)
             unassigned_tasks.remove(best_task)
             available_agents.remove(winning_agent)
