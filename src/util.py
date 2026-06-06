@@ -1,4 +1,6 @@
 import ast
+from datetime import date
+import os
 
 import pandas as pd
 from matplotlib import ticker
@@ -238,6 +240,8 @@ def plot_victim_detection_times(csv_filename: str, ax=None):
     df['individual_detection_times'] = df['individual_detection_times'].apply(ast.literal_eval)
     df_exploded = df.explode('individual_detection_times')
     df_exploded['individual_detection_times'] = pd.to_numeric(df_exploded['individual_detection_times'])
+
+    df_exploded = df_exploded.dropna(subset=['individual_detection_times'])
     
     is_standalone = ax is None
     if is_standalone:
@@ -272,7 +276,10 @@ def plot_boxes(csv_filename: str):
     plot_victim_detection_times(csv_filename, ax=ax3)
     
     plt.tight_layout()
-    plt.savefig("combined_metrics_boxplots.png", dpi=300)
+    filename = f"{date.today()}_{time.strftime('%H-%M-%S')}_boxplots.png"
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    png_path = os.path.join(parent_dir, 'sim_data', filename)
+    plt.savefig(png_path, dpi=300)
     plt.show()
 
 def plot_all(metric_history: list[MetricInTime], has_supervisor: bool):

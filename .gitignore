@@ -5,3 +5,4 @@ pytest.ini
 saved_runs/private
 .coverage
 .csv
+sim_data/

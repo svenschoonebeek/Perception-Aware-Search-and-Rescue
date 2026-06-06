@@ -108,10 +108,14 @@ def gather_data(width: int, height: int,
     df = df[cols]
     
     csv_filename = f"{date.today()}_{strftime('%H-%M-%S')}_{num_runs}x_{width}x{height}_sim_res.csv"
-    df.to_csv(csv_filename, index=False)
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
+    logger.info(f"Saving data to {csv_path}.")
+    df.to_csv(csv_path, index=False)
+
     logger.info(f"Data gathering completed in {time() - start_time:.2f} seconds.")
-    logger.info(f"Data successfully saved to {csv_filename}")
-    evaluate_csv_data(csv_filename)
+    logger.info(f"Data successfully saved to {csv_path}")
+    evaluate_csv_data(csv_path)
 
 def evaluate_csv_data(csv_filename: str):
     df = pd.read_csv(csv_filename)
@@ -153,6 +157,6 @@ if __name__ == '__main__':
     
     config = MapConfig(num_rooms=12, num_victims=20, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
                        , initial_fire_points=1, room_vulnerability_probability=0.1, tunnel_vulnerability_probability=0.1, fire_spread_rate=0.01, fire_duration=100)
-    gather_data(width=60, height=60, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=216, steps_per_run=300, config=config)
+    gather_data(width=60, height=60, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=1, steps_per_run=1, config=config)
     # plot_total_spatial_conflicts("2026-06-05_16-24-46_108x_60x60_sim_res.csv")
     # evaluate_csv_data("2026-06-06_10-02-09_1x_60x60_sim_res.csv")
