@@ -47,7 +47,7 @@ def main():
                        sim.ground_truth.fire)
 
     print("Running Simulation steps...")
-    history = sim.run(100)
+    history = sim.run(300)
 
     # plt.matshow(agent1._closest_unexplored())
     # plt.show()

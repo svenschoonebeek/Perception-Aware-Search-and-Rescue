@@ -54,6 +54,7 @@ class Simulator:
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
         self._step_victims()
+        self._rescue_victims_at_exit()
 
         if self.tripping:
             self._perform_trips()
@@ -287,6 +288,20 @@ class Simulator:
             victim.move_to(tx, ty)
 
 
+    def _rescue_victims_at_exit(self) -> None:
+        """
+        Remove any victim that has reached the exit (0,0) and record them as saved.
+        The escorting RescueAgent stays in place at the exit; the supervisory layer
+        will reassign it once implemented.
+        """
+        saved = [v for v in self.victims if v.x < 3 and v.y < 3]
+        for victim in saved:
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+            self.victims.remove(victim)
+            self.metrics.victims_saved += 1
+            if self.metrics.time_to_first_saved is None:
+                self.metrics.time_to_first_saved = self.metrics.steps_taken
+           
     def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.
