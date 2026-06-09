@@ -19,9 +19,8 @@ _DANGER_SPEED_MULTIPLIER = 1.5  # panic boost; capped at 1.0
 
 
 class Personality(Enum):
-    ALTRUIST = "altruist"   # wanders to help; only flees when in danger
-    SELFLESS = "selfless"   # like altruist but mimics others after conflict (future)
-    EGOIST   = "egoist"     # moderate; moves to exit
+    ALTRUIST = "altruist"   # wanders to group others; flees only when in danger
+    EGOIST   = "egoist"     # like altruist, but flips to selfish upon conflict with a selfish
     SELFISH  = "selfish"    # always moves to exit as fast as possible
 
 
@@ -33,7 +32,7 @@ class AgeGroup(Enum):
 
 class Victim(Agent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int,
-                 personality: Personality = Personality.SELFLESS,
+                 personality: Personality = Personality.EGOIST,
                  age_group: AgeGroup = AgeGroup.ADULT):
         super().__init__(
             name=name, x=x, y=y, width=width, height=height,
@@ -65,8 +64,9 @@ class Victim(Agent):
         if np.random.random() > move_prob:
             return AgentAction.WAIT
 
-        # Personality shifts selfish when danger is perceived (paper §IV-A)
-        flee = in_danger or self.personality in (Personality.SELFISH, Personality.EGOIST)
+        # SELFISH always flees; EGOIST and ALTRUIST wander until danger (or until
+        # EGOIST is mutated to SELFISH by the simulator's conflict resolution)
+        flee = in_danger or self.personality == Personality.SELFISH
         return self._move_towards_exit_safely() if flee else self._wander_or_seek()
 
     # ------------------------------------------------------------------
@@ -143,7 +143,7 @@ class Victim(Agent):
         return AgentAction.WAIT
 
     # ------------------------------------------------------------------
-    # Intention: wander / seek other victims (altruist / selfless)
+    # Intention: wander / seek other victims (altruist / egoist)
     # ------------------------------------------------------------------
 
     def _wander_or_seek(self) -> AgentAction:
