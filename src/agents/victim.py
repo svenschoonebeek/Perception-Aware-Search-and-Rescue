@@ -11,9 +11,9 @@ EXIT_X, EXIT_Y = 0, 0
 
 # Speed as move-probability per step, derived from paper's m/s ranges (Table 2)
 _BASE_MOVE_PROB = {
-    "child":   0.60,
-    "adult":   1.00,
-    "elderly": 0.70,
+    "child":   0.525,
+    "adult":   0.90,
+    "elderly": 0.65,
 }
 _DANGER_SPEED_MULTIPLIER = 1.5  # panic boost; capped at 1.0
 
