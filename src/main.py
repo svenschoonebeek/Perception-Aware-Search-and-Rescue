@@ -5,7 +5,6 @@ from .simulator import Simulator, MapConfig, visualize_grid_gen
 from .agents.mpc import MpcAgent
 from .agents.tmpc import TmpcAgent
 from .agents.sdd_tmpc import SddTmpcAgent
-from .agents.random import RandAgent
 from .agent import Agent
 from .visualization import Visualizer
 
@@ -45,7 +44,6 @@ def main():
         initial_fire_points=2
         )
 
-    randy   = RandAgent("randy", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
     mpc     = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
     tmpc    = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
     sddtmpc = SddTmpcAgent("sdd-tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
@@ -57,24 +55,13 @@ def main():
     #                    sim.ground_truth.fire)
     # return
 
-    seed = 552285066    # Saved seeds: 182840517, 210577037, 335492940, 95007438
+    # from numpy.random import randint
+    # seed = randint(1, 1000000000)   # Saved seeds: 182840517, 210577037, 335492940, 95007438
+    seed = 394921631
 
-    sim_rand = Simulator(WIDTH, HEIGHT)
     sim_mpc = Simulator(WIDTH, HEIGHT)
     sim_tmpc = Simulator(WIDTH, HEIGHT)
     sim_sddtmpc = Simulator(WIDTH, HEIGHT)
-    
-    # sim_rand.generate_ground_truth(config, seed)
-    # sim_rand.add_agent(randy)
-    # history = sim_rand.run(500)
-    # outcome = sim_rand.metrics.outcome.name
-    # victims = sim_rand.metrics.victims_found
-    # duration = sim_rand.metrics.steps_taken
-    # wall_collisions = sim_rand.metrics.terrain_collisions[randy]
-    # victim_collisions = sim_rand.metrics.victim_collisions[randy]
-    # fire_collisions = sim_rand.metrics.fire_collisions[randy]
-    # logger.info("Randy took %d steps, found %d victims, and hit %d walls, %d victims, and %d fires: %s", duration, victims, wall_collisions, victim_collisions, fire_collisions, outcome)
-    # Visualizer(history, 1200, 1200).run()
 
     sim_mpc.generate_ground_truth(config, seed)
     sim_mpc.add_agent(mpc)

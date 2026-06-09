@@ -97,6 +97,9 @@ class Agent:
         self.perception.agents[visible] = agnt = state.agents[visible]
         self.perception.fire[visible] = fire = state.fire[visible]
 
+        # noise = (np.random.random((self.world_height, self.world_width)) - 0.5) / 10 # [-0.05, 0.05)
+        # self.perception.vulnerability[visible] = vuln = np.clip(state.vulnerability[visible] + noise[visible], 0, 1)
+
         self.discovered = visible & ~self.explored
         self.explored[visible] = True
         burning_mask = self.perception.fire.matrix == FireLevel.BURNING

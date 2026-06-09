@@ -238,7 +238,8 @@ class MpcAgent(Agent):
             0 if the tile is unexplored or a wall
             x if the tile is explored, where x is the true shortest distance to the closest unexplored tile
         """
-        distance = np.full((self.world_height, self.world_width), -1, dtype=np.int16)
+        big_M = 32767
+        distance = np.full((self.world_height, self.world_width), big_M, dtype=np.int16)
 
         # pre-allocate queue so numba doesn't do any dynamic memory allocation
         # queue x and y together for cache locality
@@ -271,7 +272,7 @@ class MpcAgent(Agent):
 
                 if 0 <= ny < self.world_height and 0 <= nx < self.world_width:
                     moving_state.y, moving_state.x = ny, nx
-                    if distance[ny, nx] == -1 and moving_state._is_feasible():
+                    if distance[ny, nx] == big_M and moving_state._is_feasible():
                         distance[ny, nx] = distance[y, x] + 1
                         queue[tail] = (ny, nx)
                         tail += 1
