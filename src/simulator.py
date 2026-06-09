@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 from .grid import Grid
 from .state import State
 from .agent import Agent
+from .agents.victim import Victim, Personality, AgeGroup
 from .fire_manager import FireManager
 from .constants import *
 from .metric import Metric
@@ -18,6 +19,7 @@ class Simulator:
         self.width = width
         self.height = height
         self.agents: list[Agent] = []
+        self.victims: list[Victim] = []
         self.ground_truth = State(width, height)
         self.fire_manager: FireManager = FireManager(width, height, 0.0, 0) #? Start with a non-spreading fire manager, wondering if it is the right way
         self.metrics = Metric()
@@ -51,6 +53,7 @@ class Simulator:
         intents = self._collect_intents()
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
+        self._step_victims()
 
         if self.tripping:
             self._perform_trips()
@@ -62,6 +65,9 @@ class Simulator:
 
         for agent in self.agents:
             agent.scan(self.ground_truth)
+
+        for victim in self.victims:
+            victim.scan(self.ground_truth)
             
         self.metrics.steps_taken += 1
         self._update_victim_metrics()
@@ -210,6 +216,29 @@ class Simulator:
             self.ground_truth.agents[ty][tx] = 1
             agent.move_to(tx, ty)
 
+    def _step_victims(self) -> None:
+        """
+        Move each victim according to its get_action(), validating against ground truth.
+        Victims cannot walk into walls, other victims, or rescue agents.
+        """
+        for victim in self.victims:
+            action = victim.get_action()
+            if action == AgentAction.WAIT:
+                continue
+            tx, ty = victim._target_cell(action)
+            if not (0 <= tx < self.width and 0 <= ty < self.height):
+                continue
+            if self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSIBLE:
+                continue
+            if self.ground_truth.victims[ty][tx] == VictimPresence.PRESENT:
+                continue
+            if self.ground_truth.agents[ty][tx] == AgentPresence.PRESENT:
+                continue
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+            self.ground_truth.victims[ty][tx] = VictimPresence.PRESENT
+            victim.move_to(tx, ty)
+
+
     def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.
@@ -330,6 +359,16 @@ class Simulator:
                                                                                 config.room_vulnerability_severity, config.tunnel_vulnerability_severity)
         self.ground_truth.agents.matrix = _place_agents(self.width, self.height, config.num_agents, rooms, self.ground_truth.victims)
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
+        self.victims = []
+        personalities = list(Personality)
+        age_groups = list(AgeGroup)
+        ys, xs = np.nonzero(self.ground_truth.victims.matrix == VictimPresence.PRESENT)
+        for i, (vy, vx) in enumerate(zip(ys, xs)):
+            personality = personalities[np.random.randint(len(personalities))]
+            age_group = age_groups[np.random.randint(len(age_groups))]
+            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group)
+            v.scan(self.ground_truth)
+            self.victims.append(v)        
 
         self.fire_manager = FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration)
         self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)

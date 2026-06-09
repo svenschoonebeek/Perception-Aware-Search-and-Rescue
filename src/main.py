@@ -33,7 +33,7 @@ def main():
 
     sim = Simulator(WIDTH, HEIGHT, stopping_condition=StoppingCondition.TIME_LIMIT)
     config = MapConfig(num_rooms=10, num_victims=15, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, max_tunnel_thickness=3, fire_spread_rate=0.05, fire_duration=15, initial_fire_points=2)
-    sim.generate_ground_truth(config)
+    sim.generate_ground_truth(config, 579785086)
 
     # Saved seeds: 182840517, 210577037, 335492940, 95007438
 
@@ -53,7 +53,7 @@ def main():
     # plt.show()
 
     logger.info("Launching Visualizer...")
-    viz = Visualizer(history, 1000, 1000)
+    viz = Visualizer(history, 800, 800)
     viz.run()
 
 if __name__ == "__main__":
