@@ -3,6 +3,10 @@ pytest.ini
 .venv/
 .DS_Store
 saved_runs/private
+<<<<<<< HEAD
 .coverage
 .csv
 sim_data/
+=======
+runs/
+>>>>>>> victim1

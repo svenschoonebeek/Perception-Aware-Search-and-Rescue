@@ -12,8 +12,10 @@ class MetricInTime:
     outcome: RunOutcome
     victims_found: int
     total_victims: int
+    victims_saved: int
     time_to_first_found: int | None
     time_to_all_found: int | None
+    time_to_first_saved: int | None
     total_traversable: int
     terrain_collisions: dict[Agent, int]
     victim_collisions: dict[Agent, int]
@@ -42,8 +44,10 @@ class Metric:
         self.steps_taken: int = 0
         self.victims_found: int = 0
         self.total_victims: int = 0
+        self.victims_saved: int = 0
         self.time_to_first_found: int | None = None
         self.time_to_all_found: int | None = None
+        self.time_to_first_saved: int | None = None
 
         # Fraction of traversable cells the agent has ever observed. [0, 1] per agent.
         self.area_explored: dict[Agent, float] = {}
@@ -101,8 +105,10 @@ class Metric:
             outcome=self.outcome,
             victims_found=self.victims_found,
             total_victims=self.total_victims,
+            victims_saved=self.victims_saved,
             time_to_first_found=self.time_to_first_found,
             time_to_all_found=self.time_to_all_found,
+            time_to_first_saved=self.time_to_first_saved,
             total_traversable=self.total_traversable,
             total_explored=self.total_explored,
             inter_agent_distance=self.average_inter_agent_distance,

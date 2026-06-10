@@ -29,6 +29,7 @@ class Simulator:
         self.tripping = True
         self.stopping_condition: StoppingCondition = stopping_condition
         self.static_victims = True # whether victims are static or move around
+        self.rng = np.random.default_rng()
 
     def set_supervisor(self, supervisor: Supervisor) -> None:
         self.supervisor = supervisor
@@ -69,7 +70,7 @@ class Simulator:
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
         self._step_victims()
-        self._apply_vulnerability_damage()
+        self._rescue_victims_at_exit()
 
         if self.tripping:
             self._perform_trips()
@@ -265,26 +266,90 @@ class Simulator:
 
     def _step_victims(self) -> None:
         """
-        Move each victim according to its get_action(), validating against ground truth.
-        Victims cannot walk into walls, other victims, or rescue agents.
+        Move victims with personality-based conflict resolution.
+
+        Phase 1 – collect intents (physical validity only: bounds, walls, rescue agents).
+        Phase 2 – block movers targeting a stayer's cell; for same-target contests pick a
+                  winner by priority (SELFISH > EGOIST > ALTRUIST, coinflip on ties) and
+                  mutate any EGOIST that shared a contest cell with a SELFISH.
+        Phase 3 – commit all moves atomically.
         """
+        _PRIORITY = {Personality.SELFISH: 2, Personality.EGOIST: 1, Personality.ALTRUIST: 0}
+
+        # Phase 1: intents (physical validity: bounds, walls, agents, occupied victim cells)
+        intents: dict[Victim, tuple[int, int]] = {}
         for victim in self.victims:
             action = victim.get_action()
-            if action == AgentAction.WAIT:
+            if action != AgentAction.WAIT:
+                tx, ty = victim._target_cell(action)
+                valid = (
+                    0 <= tx < self.width and 0 <= ty < self.height
+                    and self.ground_truth.traversability[ty][tx] != TraversabilityLevel.UNTRAVERSABLE
+                    and self.ground_truth.agents[ty][tx] != AgentPresence.PRESENT
+                    and self.ground_truth.victims[ty][tx] != VictimPresence.PRESENT
+                )
+                intents[victim] = (tx, ty) if valid else (victim.x, victim.y)
+            else:
+                intents[victim] = (victim.x, victim.y)
+
+        # Phase 2: conflict resolution
+        stayer_cells = {(v.x, v.y) for v in self.victims if intents[v] == (v.x, v.y)}
+
+        # Block movers heading into an occupied stayer cell
+        for victim in self.victims:
+            if intents[victim] != (victim.x, victim.y) and intents[victim] in stayer_cells:
+                intents[victim] = (victim.x, victim.y)
+
+        # Group movers by target and resolve ties
+        target_groups: dict[tuple[int, int], list[Victim]] = {}
+        for victim in self.victims:
+            if intents[victim] != (victim.x, victim.y):
+                target_groups.setdefault(intents[victim], []).append(victim)
+
+        for contestants in target_groups.values():
+            if len(contestants) <= 1:
                 continue
-            tx, ty = victim._target_cell(action)
-            if not (0 <= tx < self.width and 0 <= ty < self.height):
-                continue
-            if self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSABLE:
-                continue
-            if self.ground_truth.victims[ty][tx] == VictimPresence.PRESENT:
-                continue
-            if self.ground_truth.agents[ty][tx] == AgentPresence.PRESENT:
-                continue
+
+            # Winner determined by original personality
+            max_prio = max(_PRIORITY[v.personality] for v in contestants)
+            top_tier = [v for v in contestants if _PRIORITY[v.personality] == max_prio]
+            winner_index = self.rng.integers(len(top_tier)) if len(top_tier) > 1 else 0
+            winner = top_tier[winner_index]
+
+            # Mutation: any EGOIST that contested against a SELFISH becomes SELFISH
+            if any(v.personality == Personality.SELFISH for v in contestants):
+                for v in contestants:
+                    if v.personality == Personality.EGOIST:
+                        v.personality = Personality.SELFISH
+
+            for v in contestants:
+                if v is not winner:
+                    intents[v] = (v.x, v.y)
+
+        # Phase 3: commit atomically — clear all old positions before setting new ones
+        # to avoid one victim's clear wiping another's freshly written cell.
+        moves = [(v, tx, ty) for v, (tx, ty) in intents.items() if (tx, ty) != (v.x, v.y)]
+        for victim, _, _ in moves:
             self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+        for victim, tx, ty in moves:
             self.ground_truth.victims[ty][tx] = VictimPresence.PRESENT
             victim.move_to(tx, ty)
 
+
+    def _rescue_victims_at_exit(self) -> None:
+        """
+        Remove any victim that has reached the exit (0,0) and record them as saved.
+        The escorting RescueAgent stays in place at the exit; the supervisory layer
+        will reassign it once implemented.
+        """
+        saved = [v for v in self.victims if v.x < 3 and v.y < 3]
+        for victim in saved:
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+            self.victims.remove(victim)
+            self.metrics.victims_saved += 1
+            if self.metrics.time_to_first_saved is None:
+                self.metrics.time_to_first_saved = self.metrics.steps_taken
+           
     def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.
@@ -455,6 +520,7 @@ class Simulator:
             self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
 
         self.ground_truth.confidence.matrix = np.ones((self.height, self.width))
+        self.rng = np.random.default_rng(seed)
         return
 
 def _generate_traversability_matrix(

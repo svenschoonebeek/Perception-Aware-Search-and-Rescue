@@ -4,23 +4,33 @@ from typing import Self
 import numpy as np
 
 from ..agent import Agent
-from ..constants import AgentAction, FireLevel, VulnerabilityLevel, TraversabilityLevel, VictimPresence
+from ..constants import AgentAction, AgentPresence, FireLevel, VulnerabilityLevel, TraversabilityLevel, VictimPresence
 
 EXIT_X, EXIT_Y = 0, 0
 
 # Speed as move-probability per step, derived from paper's m/s ranges (Table 2)
 _BASE_MOVE_PROB = {
-    "child":   0.60,
+    "child":   0.525,
     "adult":   0.90,
-    "elderly": 0.70,
+    "elderly": 0.65,
 }
 _DANGER_SPEED_MULTIPLIER = 1.5  # panic boost; capped at 1.0
 
+# Trust model  τᵢ(k+1) = clamp(τᵢ(k) + δᵢ·σ(k), 0, τᵢᵐᵃˣ)
+_TRUST_INIT  = 0.5
+_TRUST_MAX   = 1.0
+# δᵢ: propensity to trust — altruists open up faster, selfish people barely update
+_TRUST_SENSITIVITY = {"altruist": 1.2, "egoist": 1.0, "selfish": 0.6}
+# σ weights — asymmetric: danger loss is 3× stronger than safety gain (trust is fragile)
+_SIGMA_PROX_WEIGHT        = 0.05   # per unit of distance the robot moved closer
+_SIGMA_DANGER_GAIN_WEIGHT = 0.10   # per danger-unit improvement (slow recovery)
+_SIGMA_DANGER_LOSS_WEIGHT = 0.30   # per danger-unit worsening  (fast erosion)
+_TRUST_FOLLOW_THRESHOLD   = 0.4    # above this, victim defers to robot and follows it
+
 
 class Personality(Enum):
-    ALTRUIST = "altruist"   # wanders to help; only flees when in danger
-    SELFLESS = "selfless"   # like altruist but mimics others after conflict (future)
-    EGOIST   = "egoist"     # moderate; moves to exit
+    ALTRUIST = "altruist"   # wanders to group others; flees only when in danger
+    EGOIST   = "egoist"     # like altruist, but flips to selfish upon conflict with a selfish
     SELFISH  = "selfish"    # always moves to exit as fast as possible
 
 
@@ -32,8 +42,8 @@ class AgeGroup(Enum):
 
 class Victim(Agent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int,
-                 personality: Personality = Personality.SELFLESS,
-                 age_group: AgeGroup = AgeGroup.ADULT, 
+                 personality: Personality = Personality.EGOIST,
+                 age_group: AgeGroup = AgeGroup.ADULT,
                  is_static: bool = False,
                  seed: int | None = None):
         super().__init__(
@@ -47,12 +57,25 @@ class Victim(Agent):
         self.age_group = age_group
         self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value] if not is_static else 0.0
         self.rng = np.random.default_rng(seed)
+        self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value]
+        self.trust: float = _TRUST_INIT
+        self.trust_max: float = _TRUST_MAX
+        self._trust_sensitivity: float = _TRUST_SENSITIVITY[personality.value]
+        self._prev_danger: float | None = None
+        self._prev_robot_dist: float | None = None
+        self._curr_robot_pos: tuple[int, int] | None = None
 
     def copy(self) -> Self:
         copy = super().copy()
         copy.personality = self.personality
         copy.age_group = self.age_group
         copy._base_move_prob = self._base_move_prob
+        copy.trust = self.trust
+        copy.trust_max = self.trust_max
+        copy._trust_sensitivity = self._trust_sensitivity
+        copy._prev_danger = self._prev_danger
+        copy._prev_robot_dist = self._prev_robot_dist
+        copy._curr_robot_pos = self._curr_robot_pos
         return copy
 
     # ------------------------------------------------------------------
@@ -60,15 +83,23 @@ class Victim(Agent):
     # ------------------------------------------------------------------
 
     def get_action(self) -> AgentAction:
+        self._update_trust()
         in_danger = self._perceives_danger()
 
         # Speed: danger triggers panic → higher move probability
         move_prob = min(1.0, self._base_move_prob * (_DANGER_SPEED_MULTIPLIER if in_danger else 1.0))
-        if self.rng.random() >= move_prob:
+        if self.rng.random() > move_prob:
             return AgentAction.WAIT
 
-        # Personality shifts selfish when danger is perceived (paper §IV-A)
-        flee = in_danger or self.personality in (Personality.SELFISH, Personality.EGOIST)
+        # High trust: follow the robot (overrides personality-based logic)
+        if self.trust >= _TRUST_FOLLOW_THRESHOLD and self._curr_robot_pos is not None:
+            action = self._step_towards(*self._curr_robot_pos)
+            if action is not None:
+                return action
+
+        # SELFISH always flees; EGOIST and ALTRUIST wander until danger (or until
+        # EGOIST is mutated to SELFISH by the simulator's conflict resolution)
+        flee = in_danger or self.personality == Personality.SELFISH
         return self._move_towards_exit_safely() if flee else self._wander_or_seek()
 
     # ------------------------------------------------------------------
@@ -76,20 +107,68 @@ class Victim(Agent):
     # ------------------------------------------------------------------
 
     def _perceives_danger(self) -> bool:
-        fire = self.perception.fire.matrix
-        vuln = self.perception.vulnerability.matrix
+        return self._cell_safety_score(self.x, self.y) <= 2
 
-        if fire[self.y][self.x] >= FireLevel.BURNING:
-            return True
-        if vuln[self.y][self.x] >= VulnerabilityLevel.HIGH_RISK:
-            return True
+    # ------------------------------------------------------------------
+    # Trust: update + helpers
+    # ------------------------------------------------------------------
 
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            ny, nx = self.y + dy, self.x + dx
-            if 0 <= ny < self.world_height and 0 <= nx < self.world_width:
-                if fire[ny][nx] >= FireLevel.BURNING:
-                    return True
-        return False
+    def _cell_danger_level(self) -> float:
+        """Converts safety score to danger level: 0.0 (safe) → 4.0 (burning)."""
+        score = self._cell_safety_score(self.x, self.y)
+        return 4.0 if score < 0 else float(4 - score)
+
+    def _nearest_robot(self) -> tuple[float, tuple[int, int]] | None:
+        """Returns (distance, (x, y)) of the nearest visible robot, or None."""
+        positions = np.argwhere(self.perception.agents.matrix == AgentPresence.PRESENT)
+        if len(positions) == 0:
+            return None
+        distances = np.linalg.norm(positions - np.array([self.y, self.x]), axis=1)
+        idx = int(np.argmin(distances))
+        return float(distances[idx]), (int(positions[idx][1]), int(positions[idx][0]))
+
+    def _update_trust(self) -> None:
+        """
+        τᵢ(k+1) = clamp(τᵢ(k) + δᵢ·σ(k), 0, τᵢᵐᵃˣ)
+
+        σ is built from two signals:
+          proximity — only contributes when robot moves closer (one-directional)
+          danger    — asymmetric: improvement is weighted 3× less than worsening
+        No update at all when robot is out of perception range.
+        """
+        curr_danger = self._cell_danger_level()
+        robot_info = self._nearest_robot()
+        curr_dist = robot_info[0] if robot_info is not None else None
+        self._curr_robot_pos = robot_info[1] if robot_info is not None else None
+
+        if self._prev_danger is None:
+            self._prev_danger = curr_danger
+            self._prev_robot_dist = curr_dist
+            return
+
+        if curr_dist is None:
+            self._prev_danger = curr_danger
+            self._prev_robot_dist = None
+            return
+
+        sigma = 0.0
+
+        # Proximity: positive sigma only when robot moved closer
+        if self._prev_robot_dist is not None:
+            dist_delta = curr_dist - self._prev_robot_dist
+            if dist_delta < 0:
+                sigma += -dist_delta * _SIGMA_PROX_WEIGHT
+
+        # Danger delta: slow gain, fast loss
+        danger_delta = curr_danger - self._prev_danger
+        if danger_delta < 0:
+            sigma += -danger_delta * _SIGMA_DANGER_GAIN_WEIGHT
+        elif danger_delta > 0:
+            sigma += -danger_delta * _SIGMA_DANGER_LOSS_WEIGHT
+
+        self.trust = max(0.0, min(self.trust + self._trust_sensitivity * sigma, self.trust_max))
+        self._prev_danger = curr_danger
+        self._prev_robot_dist = curr_dist
 
     # ------------------------------------------------------------------
     # Cell safety scoring (higher = safer; -1 = impassable)
@@ -158,29 +237,37 @@ class Victim(Agent):
         return AgentAction.WAIT
 
     # ------------------------------------------------------------------
-    # Intention: wander / seek other victims (altruist / selfless)
+    # Intention: wander / seek other victims (altruist / egoist)
     # ------------------------------------------------------------------
 
     def _wander_or_seek(self) -> AgentAction:
-        victims = self.perception.victims.matrix
-        positions = np.argwhere(victims == VictimPresence.PRESENT)
-        positions = positions[(positions[:, 0] != self.y) | (positions[:, 1] != self.x)]
+       victims = self.perception.victims.matrix
+       positions = np.argwhere(victims == VictimPresence.PRESENT)
+       positions = positions[(positions[:, 0] != self.y) | (positions[:, 1] != self.x)]
 
-        if len(positions) > 0:
-            distances = np.linalg.norm(positions - np.array([self.y, self.x]), axis=1)
-            target = positions[np.argmin(distances)]
-            action = self._step_towards(int(target[1]), int(target[0]))
-            if action is not None:
+       if len(positions) > 0:
+          distances = np.linalg.norm(positions - np.array([self.y, self.x]), axis=1)
+          nearest_dist = distances.min()
+         
+          # If we've reached a victim (adjacent), form a group and head to exit
+          if nearest_dist <= 1.5:  # adjacent cell
+                return self._move_towards_exit_safely()
+         
+          # Otherwise keep seeking
+          target = positions[np.argmin(distances)]
+          action = self._step_towards(int(target[1]), int(target[0]))
+          if action is not None:
                 return action
 
-        safe_moves = [
+       # No victims found: wander safely
+       safe_moves = [
             a for a in AgentAction
             if a != AgentAction.WAIT and self._cell_safety_score(*self._target_cell(a)) >= 3
         ]
-        if safe_moves:
-            return self.rng.choice(safe_moves)
+       if safe_moves:
+           return self.rng.choice(safe_moves)
 
-        return AgentAction.WAIT
+       return AgentAction.WAIT
 
     def _step_towards(self, tx: int, ty: int) -> AgentAction | None:
         candidates: list[tuple[int, AgentAction]] = []
