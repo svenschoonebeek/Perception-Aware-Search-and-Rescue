@@ -357,6 +357,10 @@ class Simulator:
         truth = (self.ground_truth.victims.matrix == VictimPresence.PRESENT)
         total = int(truth.sum())
         self.metrics.total_victims = total
+        if total == 0:
+            if self.stopping_condition == StoppingCondition.ALL_VICTIMS_RESCUED:
+             self.metrics.outcome = RunOutcome.SUCCESS
+            return
 
         union = np.zeros_like(truth, dtype=bool)
         for agent in self.agents:
@@ -372,8 +376,6 @@ class Simulator:
             self.metrics.time_to_all_found = self.metrics.steps_taken
             if self.stopping_condition == StoppingCondition.ALL_VICTIMS_FOUND:
                 self.metrics.outcome = RunOutcome.SUCCESS
-        if total == 0 and self.stopping_condition == StoppingCondition.ALL_VICTIMS_RESCUED:
-            self.metrics.outcome = RunOutcome.SUCCESS
 
     def _update_area_explored(self) -> None:
         """

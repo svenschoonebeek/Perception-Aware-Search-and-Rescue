@@ -49,12 +49,12 @@ def main():
     # agent3 = TaskMpcAgent("tasker3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=0.0))
     agent3 = RescueAgent("rescuer3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False, None, Capabilities(exploration=1.0, rescuing=1.0))
     # agent3 = MpcAgent("mpc3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False)
-    sim.add_agent(agent3)
+    # sim.add_agent(agent3)
 
     # agent4 = TaskMpcAgent("tasker4", 1, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False, Capabilities(exploration=1.0, rescuing=0.0))
     agent4 = RescueAgent("rescuer4", 1, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False, None, Capabilities(exploration=1.0, rescuing=1.0))
     # agent4 = MpcAgent("mpc4", 1, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False)
-    sim.add_agent(agent4)
+    # sim.add_agent(agent4)
 
     supervisor = Supervisor(WIDTH, HEIGHT, 0.01, 8, True)
     sim.set_supervisor(supervisor)

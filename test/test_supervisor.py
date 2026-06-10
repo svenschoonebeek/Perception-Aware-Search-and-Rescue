@@ -145,7 +145,7 @@ class SupervisorTest(unittest.TestCase):
             Task(TaskType.EXPLORE, 17, 17)
         ]
 
-        self.supervisor._run_task_auction(tasks, [agent1, agent2])
+        self.supervisor._run_task_auction(tasks, [agent1, agent2], [])
 
         self.assertEqual(agent1.current_task.x, 3)
         self.assertEqual(agent1.current_task.y, 3)
@@ -166,7 +166,7 @@ class SupervisorTest(unittest.TestCase):
             Task(TaskType.EXPLORE, 15, 15) # Far away
         ]
 
-        self.supervisor._run_task_auction(tasks, [agent1, agent2])
+        self.supervisor._run_task_auction(tasks, [agent1, agent2], [])
 
         # agent 1 will take the closest one (5, 6)
         # because (5, 7) is close to it burgard spatial penalty will spike
@@ -188,7 +188,7 @@ class SupervisorTest(unittest.TestCase):
 
         tasks = [Task(TaskType.EXPLORE, 4, 4)]
 
-        self.supervisor._run_task_auction(tasks, [agent1, agent2])
+        self.supervisor._run_task_auction(tasks, [agent1, agent2], [])
 
         self.assertEqual(agent1.current_task.x, 4)
         
