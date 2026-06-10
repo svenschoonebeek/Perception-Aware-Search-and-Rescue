@@ -197,7 +197,7 @@ def plot_total_spatial_conflicts(csv_filename: str, ax=None):
         medianprops=dict(color="red")
     )
     
-    ax.set_title("Total Nr of Spatial Conflicts", fontsize=12, pad=10)
+    ax.set_title("a) Total Nr of Spatial Conflicts", fontsize=12, pad=10)
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_ylim(bottom=-5)    
@@ -224,7 +224,7 @@ def plot_victims_found(csv_filename: str, ax=None):
         medianprops=dict(color="red")
     )
     
-    ax.set_title("Total Nr of Victims Found", fontsize=12, pad=10)
+    ax.set_title("b) Total Nr of Victims Found", fontsize=12, pad=10)
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_ylim(bottom=-5)    
@@ -257,7 +257,7 @@ def plot_victim_detection_times(csv_filename: str, ax=None):
         medianprops=dict(color="red")
     )
     
-    ax.set_title("Time of Detection", fontsize=12, pad=10)
+    ax.set_title("c) Time of Detection", fontsize=12, pad=10)
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_ylim(bottom=-5)    

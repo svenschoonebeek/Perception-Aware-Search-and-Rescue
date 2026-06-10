@@ -124,12 +124,13 @@ def evaluate_csv_data(csv_filename: str):
     summary = df.groupby('mode').mean(numeric_only=True).drop('seed', axis=1, errors='ignore')
     summary['std_time_all_found'] = df.groupby('mode')['time_to_all_found'].std()
     summary['std_avg_step_duration'] = df.groupby('mode')['avg_step_duration'].std()
+    summary['std_avg_inter_agent_distance'] = df.groupby('mode')['avg_inter_agent_distance'].std()
 
     if 'Supervised' in summary.index and 'Unsupervised' in summary.index:
         summary.loc['Ratio (Sup/Unsup)'] = summary.loc['Supervised'] / summary.loc['Unsupervised']
 
     milestone_cols = ['time_to_50', 'time_to_70', 'time_to_80', 'time_to_85', 'time_to_90']
-    spatial_cols = ['total_steps', 'final_exploration', 'avg_inter_agent_distance', 'total_spatial_conflicts', 'found_victims']
+    spatial_cols = ['total_steps', 'final_exploration', 'avg_inter_agent_distance', 'std_avg_inter_agent_distance', 'total_spatial_conflicts', 'found_victims']
     perf_cols = ['time_to_all_found', 'std_time_all_found', 'avg_step_duration', 'std_avg_step_duration']
 
     logger.info("\n" + "="*50)
@@ -149,7 +150,7 @@ def evaluate_csv_data(csv_filename: str):
     for mode, rate in success_rates.items():
         logger.info(f"{mode}: {rate:.1f}%")
     
-    plot_boxes(csv_filename)
+    # plot_boxes(csv_filename)
 
 if __name__ == '__main__':
     setup_logging(False)
@@ -157,6 +158,10 @@ if __name__ == '__main__':
     
     config = MapConfig(num_rooms=12, num_victims=20, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
                        , initial_fire_points=1, room_vulnerability_probability=0.1, tunnel_vulnerability_probability=0.1, fire_spread_rate=0.01, fire_duration=100)
-    gather_data(width=60, height=60, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=1, steps_per_run=1, config=config)
+    # gather_data(width=60, height=60, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=216, steps_per_run=300, config=config)
     # plot_total_spatial_conflicts("2026-06-05_16-24-46_108x_60x60_sim_res.csv")
-    # evaluate_csv_data("2026-06-06_10-02-09_1x_60x60_sim_res.csv")
+    csv_filename = "2026-06-06_15-56-37_216x_60x60_sim_res.csv"
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
+    # evaluate_csv_data(csv_path)
+    plot_boxes(csv_path)
