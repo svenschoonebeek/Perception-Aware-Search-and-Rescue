@@ -1,9 +1,10 @@
 import logging
 import numpy as np
+from typing import Self
 from numpy.typing import NDArray
 
 from .mpc import MpcAgent
-from ..constants import FireLevel, VulnerabilityLevel
+from ..constants import AgentAction, FireLevel, VulnerabilityLevel
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,22 @@ class SddTmpcAgent(MpcAgent):
                  decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool):
         super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff)
         self.fire_spread_rate = 1.0
+        self.tube_sizes = []
+
+    def copy(self) -> Self:
+        cpy = super().copy()
+        cpy.tube_sizes = self.tube_sizes.copy()
+        return cpy
+
+    def get_action(self) -> AgentAction:
+        action = super().get_action()
+        
+        vuln = self.perception.vulnerability[self.y, self.x]
+        conf = self.perception.confidence[self.y, self.x]
+        tube_size = 1 if vuln - conf > 0 else 0
+        self.tube_sizes.append(tube_size)
+        
+        return action
 
     def _is_feasible(self) -> bool:
         """

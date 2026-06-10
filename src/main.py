@@ -11,8 +11,8 @@ from .agents.sdd_tmpc import SddTmpcAgent
 from .visualization import Visualizer
 
 
-WIDTH = 25
-HEIGHT = 25
+WIDTH = 35
+HEIGHT = 35
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,9 @@ def main():
     setup_logging(args.debug)
 
     config = MapConfig(
-        num_rooms=5,
+        num_rooms=7,
         min_tunnel_thickness=1,
-        max_tunnel_thickness=1,
+        max_tunnel_thickness=3,
         num_victims=12,
         fire_spread_rate=0.04,
         fire_duration=15,
@@ -151,6 +151,26 @@ def main():
     
     viz = Visualizer.from_file("saved_runs/private/sim_20260602_003614_122steps_sdd.pkl")
     viz.run()
+
+    # * Personal
+    # seeds = pd.read_csv("saved_runs/data/sdd_results.csv").seed
+    # data = []
+    # for i, seed in enumerate(seeds):
+    #     logger.info(f"Run {i + 1}:")
+    #     sim = Simulator(WIDTH, HEIGHT)
+    #     agent = sdd.copy()
+    #     sim.generate_ground_truth(config, seed)
+    #     sim.add_agent(agent)
+    #     history = sim.run(max_steps)
+
+    #     total_steps = sim.metrics.steps_taken
+    #     logger.info(f"Total steps: {total_steps}\n")
+    #     for step, size in enumerate(agent.tube_sizes):
+    #         progress = step / total_steps
+    #         data.append([seed, progress, size])
+
+    # size_df = pd.DataFrame(data, columns=["seed", "progress", "tube_size"])
+    # size_df.to_csv("saved_runs/data/size_time.csv")
 
 if __name__ == "__main__":
     main()
