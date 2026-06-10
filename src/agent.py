@@ -12,6 +12,7 @@ from .constants import AgentAction, Capabilities, FireLevel, Scan, Task, TaskTyp
 
 if TYPE_CHECKING:
     from .supervisor import Supervisor
+    from .agents.victim import Victim
 
 # Threshold for what value of traversability causes a tile to become 'opaque' to the LoS check
 LOS_THRESHOLD = 1
@@ -170,6 +171,12 @@ class Agent:
         Returns the capabilities of the agent, to be used by the supervisor for task allocation
         """
         return Capabilities()
+    
+    def set_assigned_victim(self, victim: Victim) -> None:
+        """
+        Sets assigned victim, to be used in rescue agent
+        """
+        pass
     
     def _tiles_in_radius(self) -> NDArray[np.bool]:
         """

@@ -3,10 +3,14 @@ from collections import deque
 import numpy as np
 from numpy.typing import NDArray
 from typing import Self
+import logging
 
 from ..agent import Agent
-from ..constants import AgentAction, TraversabilityLevel
+from .task_mpc import TaskMpcAgent
+from ..constants import *
 from .victim import Victim
+from src.supervisor import Supervisor
+from src.state import State
 
 EXIT_X, EXIT_Y  = 0, 0
 EXIT_ZONE       = 3     # victims despawn in the EXIT_ZONE × EXIT_ZONE square at (0,0)
@@ -14,26 +18,27 @@ TRUST_THRESHOLD = 0.4   # switch from approach-mode to lead-mode above this
 MAX_FOLLOW_DIST = 5.0   # leash: wait if victim falls this many cells behind
 SIGMA_ROBOT     = 0.1   # how fast the trust estimate updates per unit of Δdistance
 
+logger = logging.getLogger(__name__)
 
-class RescueAgent(Agent):
+class RescueAgent(TaskMpcAgent):
     """
     Two-mode rescue robot.
 
-    Mode 1 – approach  (estimated_trust < TRUST_THRESHOLD):
+    Mode 1 - approach  (estimated_trust < TRUST_THRESHOLD):
         Move toward the victim to build trust via proximity.
         Uses a sweet-spot strategy: if already within the victim's perception
         radius, nudge exitward instead of crowding the victim.
 
-    Mode 2 – lead      (estimated_trust >= TRUST_THRESHOLD):
+    Mode 2 - lead      (estimated_trust >= TRUST_THRESHOLD):
         Follow the BFS exit map toward (0,0), but wait if the victim
         falls more than MAX_FOLLOW_DIST cells behind (leash condition).
     """
 
     def __init__(self, name: str, x: int, y: int, width: int, height: int,
                  decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool,
-                 assigned_victim: Victim):
-        super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff)
-        self._assigned_victim: Victim = assigned_victim
+                 assigned_victim: Victim | None, capabilities: Capabilities):
+        super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff, capabilities)
+        self._assigned_victim: Victim | None = assigned_victim
         self._estimated_trust: float = 0.0
         self._prev_victim_dist: float | None = None
         self._exit_dist: NDArray = np.full((height, width), -1, dtype=np.int32)
@@ -45,12 +50,69 @@ class RescueAgent(Agent):
         copy._prev_victim_dist = self._prev_victim_dist
         copy._exit_dist = np.copy(self._exit_dist)
         return copy
+    
+    def set_assigned_victim(self, victim: Victim) -> None:
+        """
+        Sets assigned victim, to be used in rescue agent
+        """
+        self._assigned_victim = victim
 
+    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
+        logger.debug(f"rescue agent checking status with victim {self._assigned_victim.name if self._assigned_victim else None} at ({self._assigned_victim.x}, {self._assigned_victim.y})" if self._assigned_victim else "rescue agent checking status with no assigned victim")
+        self.conflict_timeout += 1
+        if (self.conflict_timeout >= 3):
+            self._check_for_spatial_conflict(supervisor, state)
+        
+        if supervisor is None:
+            return
+        
+        if self.current_task.type == TaskType.EXPLORE:
+            path_valid = self._check_path_blocked(supervisor)
+            if not path_valid:
+                return
+            distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
+            if distance_to_target <= 1.0:
+                supervisor.trigger_event(InterventionEvent(
+                    type=EventType.TASK_COMPLETED,
+                    description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
+                    data={"agent": self.name}
+                ))
+                self._return_to_idle()
+        elif self.current_task.type == TaskType.RESCUE:
+            distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
+            if self.current_task.search_status == SearchStatus.SEARCHING:
+                if distance_to_target <= 3.0:
+                    self.current_task.search_status = SearchStatus.RESCUING
+                    logger.debug(f"{self.name} is starting rescue for victim {self.current_task.victim_id} at ({self.current_task.x}, {self.current_task.y})")
+                    supervisor.trigger_event(InterventionEvent(
+                        type=EventType.INITIALIZING_RESCUE,
+                        description=f"{self.name} found a victim at ({self.current_task.x}, {self.current_task.y}) and is initializing rescue.",
+                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                    ))
+                    self.current_task.x, self.current_task.y = 0, 0 # go to exit, currently hardcoded 0,0
+                    self.current_path = self._calculate_path(self.x, self.y, self.current_task.x, self.current_task.y)
+                    # TODO use maria's implementation and her "completed rescue" indication
+                
+            elif self.current_task.search_status == SearchStatus.RESCUING:
+                if self._assigned_victim is not None and self._assigned_victim.x < EXIT_ZONE and self._assigned_victim.y < EXIT_ZONE:
+                    logger.debug(f"{self.name} is completing rescue for victim {self.current_task.victim_id} at ({self.current_task.x}, {self.current_task.y})")
+                    supervisor.trigger_event(InterventionEvent(
+                        type=EventType.VICTIM_RESCUED,
+                        description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
+                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                    ))
+                    self._return_to_idle()
+
+    def get_action(self) -> AgentAction:
+        if (self.current_task.type == TaskType.RESCUE and self.current_task.search_status == SearchStatus.RESCUING):
+            return self.get_rescue_action()
+        else:
+            return super().get_action()
+    
     # ------------------------------------------------------------------
     # BDI entry point
     # ------------------------------------------------------------------
-
-    def get_action(self) -> AgentAction:
+    def get_rescue_action(self) -> AgentAction:
         self._rebuild_exit_bfs()
         estimated_trust = self._estimate_trust()
 
@@ -94,6 +156,10 @@ class RescueAgent(Agent):
           - Inside radius: nudge exitward as a directional hint while remaining
             visible — this demonstrates the path without crowding the victim
         """
+        if self._assigned_victim is None:
+            logger.debug("approach mode but no assigned victim, returning WAIT")
+            return AgentAction.WAIT
+
         dist = self._dist_to_victim()
         if dist > self._assigned_victim.scan_radius:
             return self._step_towards(self._assigned_victim.x, self._assigned_victim.y)
@@ -162,6 +228,8 @@ class RescueAgent(Agent):
 
     def _dist_to_victim(self) -> float:
         v = self._assigned_victim
+        if v is None:
+            return float('inf')
         return float(np.sqrt((self.x - v.x) ** 2 + (self.y - v.y) ** 2))
 
     def _rebuild_exit_bfs(self) -> None:

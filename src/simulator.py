@@ -28,7 +28,7 @@ class Simulator:
         self.supervisor: Supervisor | None = None
         self.tripping = True
         self.stopping_condition: StoppingCondition = stopping_condition
-        self.static_victims = True # whether victims are static or move around
+        self.static_victims = False # whether victims are static or move around
         self.rng = np.random.default_rng()
 
     def set_supervisor(self, supervisor: Supervisor) -> None:
@@ -96,7 +96,7 @@ class Simulator:
             self.supervisor.check_explore_tasks()
 
             if self.supervisor.requires_intervention():
-                self.supervisor.resolve_events(self.agents)
+                self.supervisor.resolve_events(self.agents, self.victims) # victims are passed to be passed to rescue agent
 
         for victim in self.victims:
             victim.scan(self.ground_truth)

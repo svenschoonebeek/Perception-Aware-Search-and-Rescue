@@ -89,27 +89,6 @@ class TaskMpcAgent(MpcAgent):
                     data={"agent": self.name}
                 ))
                 self._return_to_idle()
-        elif self.current_task.type == TaskType.RESCUE:
-            distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
-            if distance_to_target <= 1.0:
-                if self.current_task.search_status == SearchStatus.SEARCHING:
-                    self.current_task.search_status = SearchStatus.RESCUING
-                    supervisor.trigger_event(InterventionEvent(
-                        type=EventType.INITIALIZING_RESCUE,
-                        description=f"{self.name} found a victim at ({self.current_task.x}, {self.current_task.y}) and is initializing rescue.",
-                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
-                    ))
-                    self.current_task.x, self.current_task.y = 0, 0 # go to exit, currently hardcoded 0,0
-                    self.current_path = self._calculate_path(self.x, self.y, self.current_task.x, self.current_task.y)
-                    # TODO use maria's implementation and her "completed rescue" indication
-                
-                elif self.current_task.search_status == SearchStatus.RESCUING:
-                    supervisor.trigger_event(InterventionEvent(
-                        type=EventType.VICTIM_RESCUED,
-                        description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
-                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
-                    ))
-                    self._return_to_idle()
 
     def _check_path_blocked(self, supervisor: Supervisor | None):
         """

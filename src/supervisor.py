@@ -39,7 +39,12 @@ class Supervisor:
         """
         Checks if there are any events in the queue that require intervention
         """
-        immediate_triggers = [EventType.VICTIM_FOUND, EventType.TASK_COMPLETED]
+        immediate_triggers = [
+            EventType.VICTIM_FOUND, 
+            EventType.TASK_COMPLETED, 
+            EventType.INITIALIZING_RESCUE, 
+            EventType.VICTIM_RESCUED
+        ]
         has_critical_event = any(e.type in immediate_triggers for e in self.unresolved_events)
         if has_critical_event:
             return True
@@ -58,7 +63,7 @@ class Supervisor:
         self.shared_belief.confidence.matrix = np.maximum(self.shared_belief.confidence.matrix - self.decay, 0) # vectorized confidence decay
         
         for agent_name, agent_info in self.agent_tracker.items():
-            logger.debug(f"Agent {agent_name} is tracked with task {agent_info.task.type} with target {agent_info.task.x}, {agent_info.task.y} at position ({agent_info.x}, {agent_info.y})")
+            logger.debug(f"Agent {agent_name} is tracked with task {agent_info.task.type} with status {agent_info.task.search_status} with target {agent_info.task.x}, {agent_info.task.y} at position ({agent_info.x}, {agent_info.y})")
         for vid, victim_info in self.victim_tracker.items():
             logger.debug(f"Victim {vid} is tracked with state {victim_info.state} at position ({victim_info.x}, {victim_info.y})")
         
@@ -134,7 +139,7 @@ class Supervisor:
         agent.set_current_path(path)
         self.agent_tracker[agent.name].task = task
 
-    def resolve_events(self, agents: list[Agent]) -> None:
+    def resolve_events(self, agents: list[Agent], victims: list[Victim]) -> None:
         """
         Assigns tasks to agents based on the events in the queue, and the current shared belief state
         """
@@ -152,7 +157,7 @@ class Supervisor:
             
             elif event.type == EventType.VICTIM_FOUND and self.rescue_victims:
                 vid = event.data["victim_id"]
-                rescue_task = Task(TaskType.RESCUE, x=event.data["x"], y=event.data["y"], victim_id=vid)
+                rescue_task = Task(TaskType.RESCUE, x=event.data["x"], y=event.data["y"], victim_id=vid, search_status=SearchStatus.SEARCHING)
                 self.task_backlog.add(rescue_task)
                 all_agents_bid_flag = True
             
@@ -168,6 +173,7 @@ class Supervisor:
                 # doesn't get added to the task list because it is just an update for the tracker or agent
             
             elif event.type == EventType.INITIALIZING_RESCUE:
+                logger.debug(f"Initializing rescue for victim {event.data['victim_id']} by agent {event.data['agent']}")
                 self.agent_tracker[event.data["agent"]].task.search_status = SearchStatus.RESCUING
                 self.victim_tracker[event.data["victim_id"]].state = VictimState.BEING_RESCUED
             
@@ -186,10 +192,10 @@ class Supervisor:
         bidding_agents = [a for a in assignable_agents if a.name in bidding_agent_names]
         if all_agents_bid_flag:
             bidding_agents = assignable_agents
-        self._run_task_auction(unassigned_tasks, bidding_agents)
+        self._run_task_auction(unassigned_tasks, bidding_agents, victims)
 
 
-    def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent]) -> None:
+    def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent], victims: list[Victim]) -> None:
         if not unassigned_tasks or not bidding_agents:
             return
         logger.debug(f"Auctioning these tasks: {unassigned_tasks}")
@@ -263,6 +269,13 @@ class Supervisor:
 
             if best_task.type == TaskType.RESCUE:
                 self.victim_tracker[best_task.victim_id] = VictimInfo(name=best_task.victim_id, x=best_task.x, y=best_task.y, state=VictimState.SOUGHT)
+                victim = next((v for v in victims if v.name == best_task.victim_id), None)
+                if victim is None:
+                    logger.debug(f"Could not find victim with id {best_task.victim_id} for rescue assignment.")
+                    unassigned_tasks.remove(best_task)
+                    continue
+                winning_agent.set_assigned_victim(victim)
+                #? Currently we just get the victim class from the id, but maybe update rescue to also use an id or something
             
             self._set_agent_task(winning_agent, best_task, best_path)
             logger.debug(f"Auction assigned {best_task.type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
