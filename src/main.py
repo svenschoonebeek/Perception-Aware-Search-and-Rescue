@@ -59,38 +59,8 @@ def main():
     supervisor = Supervisor(WIDTH, HEIGHT, 0.01, 8, True)
     sim.set_supervisor(supervisor)
 
-    # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, sim.ground_truth.victims, sim.ground_truth.vulnerability, sim.ground_truth.fire)
-
-    config = MapConfig(
-        num_rooms=10, 
-        num_victims=15, 
-        min_room_length=5, 
-        min_room_width=5, 
-        max_room_length=10, 
-        max_room_width=10, 
-        min_tunnel_thickness=2,
-        max_tunnel_thickness=2, 
-        fire_spread_rate=0.05, 
-        fire_duration=15, 
-        initial_fire_points=2
-        )
-
-    mpc     = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
-    tmpc    = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
-    sddtmpc = SddTmpcAgent("sdd-tmpc", 1, 1, WIDTH, HEIGHT, 0.01, 0.35, 4, True)
-
-    # sim = Simulator(WIDTH, HEIGHT)
-    # sim.generate_ground_truth(config)
-    # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, 
-    #                    sim.ground_truth.victims, sim.ground_truth.vulnerability,
-    #                    sim.ground_truth.fire)
-    # return
-
     print("Running Simulation steps...")
     history = sim.run(500)
-
-    # plt.matshow(agent1._closest_unexplored())
-    # plt.show()
 
     logger.info("Launching Visualizer...")
     viz = Visualizer(history, 800, 800)
