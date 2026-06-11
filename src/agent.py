@@ -1,29 +1,21 @@
+from __future__ import annotations
+from collections import deque
 from .state import State
-from .constants import AgentAction
-
 import numpy as np
 from numpy.typing import NDArray
-
 from dataclasses import dataclass
-from typing import Self
-
+from typing import TYPE_CHECKING, Self
 from tcod.map import compute_fov
 from tcod.libtcodpy import FOV_RESTRICTIVE
 
+from .constants import AgentAction, Capabilities, FireLevel, Scan, Task, TaskType, TraversabilityLevel
+
+if TYPE_CHECKING:
+    from .supervisor import Supervisor
+    from .agents.victim import Victim
+
 # Threshold for what value of traversability causes a tile to become 'opaque' to the LoS check
 LOS_THRESHOLD = 1
-
-@dataclass
-class Scan:
-    xs: NDArray
-    ys: NDArray
-    traversability: NDArray
-    vulnerability: NDArray
-    victims: NDArray
-    agents: NDArray
-    fire: NDArray
-    confidence: NDArray
-
 
 class Agent:
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
@@ -50,6 +42,8 @@ class Agent:
         self.explored: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent has scanned at any point in the run
         self.discovered: np.ndarray = np.zeros((height, width), dtype=bool) # Cells the agent scanned for the first time this step
 
+        self.assignable = False # Whether the supervisor can assign a task to this agent
+
     def copy(self) -> Self:
         cls = type(self)
         copy = cls.__new__(cls)
@@ -71,6 +65,8 @@ class Agent:
         copy.move_history = self.move_history.copy()
         copy.explored = np.copy(self.explored)
         copy.discovered = np.copy(self.discovered)
+
+        copy.assignable = self.assignable
 
         return copy
 
@@ -99,7 +95,7 @@ class Agent:
         ys, xs = np.nonzero(visible)
         conf = self.perception.confidence.matrix[visible]
 
-        return Scan(xs, ys, trvs, vuln, vict, agnt, fire, conf)
+        return Scan(self.name, self.x, self.y, xs, ys, trvs, vuln, vict, agnt, fire, conf)
     
     def _target_cell(self, action: AgentAction) -> tuple[int, int]:
         """
@@ -133,7 +129,55 @@ class Agent:
         The action the agent wants to perform given its internal perception matrix
         """
         return AgentAction.MOVE_RIGHT
+    
+    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
+        """
+        Checks whether the agent has completed its current task, base Agent doesn't use it
+        """
+        pass
 
+    def get_current_task(self) -> Task | None:
+        """
+        Returns the current task of the agent, to be used by the supervisor for task allocation
+        """
+        return None
+    
+    def set_current_task(self, task: Task) -> None:
+        """
+        Sets the current task of the agent, to be used by the supervisor for task allocation
+        """
+        pass
+
+    def get_current_path(self) -> list[tuple[int, int]] | None:
+        """
+        Returns the current path of the agent, to be used by the supervisor for task allocation
+        """
+        return None
+
+    def set_current_path(self, path: list[tuple[int, int]]) -> None:
+        """
+        Sets the current path of the agent, to be used by the supervisor for task allocation
+        """
+        pass
+
+    def get_spatial_conflicts(self) -> int:
+        """
+        Returns the number of spatial conflicts the agent has been involved in, to be used by the supervisor for task allocation
+        """
+        return 0
+
+    def get_capabilities(self) -> Capabilities:
+        """
+        Returns the capabilities of the agent, to be used by the supervisor for task allocation
+        """
+        return Capabilities()
+    
+    def set_assigned_victim(self, victim: Victim) -> None:
+        """
+        Sets assigned victim, to be used in rescue agent
+        """
+        pass
+    
     def _tiles_in_radius(self) -> NDArray[np.bool]:
         """
         Returns a mask of all tiles within scan_radius of the agent

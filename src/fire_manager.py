@@ -7,13 +7,15 @@ class FireManager:
     def __init__(
             self, 
             width: int, height: 
-            int, s_r: float, f_r: int
+            int, s_r: float, f_r: int,
+            seed: int | None = None
             ):
         self.width = width
         self.height = height
         self.spread_rate = s_r
         self.fire_duration = f_r
         self.active_fire_front: set[tuple[int, int, int]] = set() # (x, y, duration)
+        self.rng = np.random.default_rng(seed)
     
     def initialize_fire(self,
             ground_truth: State,
@@ -32,14 +34,14 @@ class FireManager:
         room_n = len(rooms)
 
         for _ in range(n):
-            random_room = rooms[np.random.randint(0, room_n)]
+            random_room = rooms[self.rng.integers(0, room_n)]
             x_range = random_room['x_range']
             y_range = random_room['y_range']
-            random_x = np.random.randint(x_range[0], x_range[1])
-            random_y = np.random.randint(y_range[0], y_range[1])
+            random_x = self.rng.integers(x_range[0], x_range[1])
+            random_y = self.rng.integers(y_range[0], y_range[1])
             while (ground_truth.fire[random_y, random_x] == FireLevel.BURNING or ground_truth.victims[random_y, random_x] == VictimPresence.PRESENT):
-                random_x = np.random.randint(x_range[0], x_range[1])
-                random_y = np.random.randint(y_range[0], y_range[1])
+                random_x = self.rng.integers(x_range[0], x_range[1])
+                random_y = self.rng.integers(y_range[0], y_range[1])
             ground_truth.fire[random_y, random_x] = FireLevel.BURNING
             self.active_fire_front.add((random_x, random_y, 0))
             self._expose_neighbors(ground_truth, random_x, random_y)
@@ -67,12 +69,12 @@ class FireManager:
                 if not (0 <= new_x < self.width and 0 <= new_y < self.height):
                     continue
 
-                is_traversable = ground_truth.traversability[new_y][new_x] == TraversabilityLevel.TRAVERSIBLE
+                is_traversable = ground_truth.traversability[new_y][new_x] == TraversabilityLevel.TRAVERSABLE
                 if not (is_traversable):
                     continue
 
                 if (ground_truth.fire[new_y][new_x] == FireLevel.FLAMMABLE):
-                    if (np.random.random() <= self.spread_rate):
+                    if (self.rng.random() <= self.spread_rate):
                         ground_truth.fire[new_y][new_x] = FireLevel.BURNING
                         newly_ignited.add((new_x, new_y, 0))
             if (duration < self.fire_duration or self.fire_duration == -1):
@@ -97,7 +99,7 @@ class FireManager:
             if not (0 <= nx < self.width and 0 <= ny < self.height):
                 continue
                 
-            if ground_truth.traversability[ny, nx] == TraversabilityLevel.UNTRAVERSIBLE:
+            if ground_truth.traversability[ny, nx] == TraversabilityLevel.UNTRAVERSABLE:
                 continue
                 
             if ground_truth.fire[ny, nx] == FireLevel.SAFE:

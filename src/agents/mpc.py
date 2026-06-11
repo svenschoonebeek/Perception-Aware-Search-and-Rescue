@@ -5,7 +5,7 @@ from typing import Self
 from scipy.ndimage import binary_dilation
 
 from src.agent import Agent
-from src.constants import AgentAction, FireLevel, TraversabilityLevel
+from src.constants import AgentAction, AgentPresence, FireLevel, TraversabilityLevel, VictimPresence
 
 logger = logging.getLogger(__name__)
 
@@ -71,16 +71,16 @@ class MpcAgent(Agent):
 
         if len(best_sequence) == 0:
             self.infeasible_states += 1
-            print("INFEASIBLE STATE REACHED ==========================")
-            print("Dscv:", self._discovery_score())
-            print("Safety:", self._safety_penalty())
-            print("Conf:", self._confidence_score())
-            print("Expl:", self._exploration_penalty())
+            logger.debug("INFEASIBLE STATE REACHED ==========================")
+            logger.debug("Dscv:", self._discovery_score())
+            logger.debug("Safety:", self._safety_penalty())
+            logger.debug("Conf:", self._confidence_score())
+            logger.debug("Expl:", self._exploration_penalty())
             return AgentAction.WAIT
 
         return best_sequence[0]
     
-    def _predict_next_state(self, action: AgentAction, depth: int) -> "MpcAgent | None": # <- Apparently how to do forward declaration
+    def _predict_next_state(self, action: AgentAction, depth: int) -> Self | None:
         """
         Predicts the state resulting from the given action, unless said prediction would fall outside the admissible set X
         Does not check whether the predicted state violates constraints (see self._is_feasible)
@@ -129,7 +129,7 @@ class MpcAgent(Agent):
 
             adjacent_mask = binary_dilation(ignited_mask)
             safe_mask = current_fire == FireLevel.SAFE
-            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSIBLE
+            traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSABLE
             exposed_mask = adjacent_mask & safe_mask & traversable_mask
             current_fire[exposed_mask] = FireLevel.FLAMMABLE
 
@@ -195,7 +195,7 @@ class MpcAgent(Agent):
         """
         newly_explored = np.count_nonzero(self.discovered)
 
-        return newly_explored / ((np.pi * self.scan_radius ** 2) / 2)
+        return float(newly_explored / ((np.pi * self.scan_radius ** 2) / 2))
 
     def _safety_penalty(self) -> float:
         """

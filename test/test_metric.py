@@ -40,7 +40,7 @@ class TestTerrainCollision(unittest.TestCase):
 
     def test_wall_counts_as_terrain(self):
         sim = Simulator(3, 3)
-        sim.ground_truth.traversability[0][1] = TraversabilityLevel.UNTRAVERSIBLE
+        sim.ground_truth.traversability[0][1] = TraversabilityLevel.UNTRAVERSABLE
         a = _make_agent("a", 0, 0, 3, 3, AgentAction.MOVE_RIGHT)
         sim.add_agent(a)
         sim.run(2)
@@ -202,7 +202,7 @@ class TestAreaExplored(unittest.TestCase):
 
     def test_walls_excluded_from_denominator(self):
         sim = Simulator(3, 3)
-        sim.ground_truth.traversability[2][2] = TraversabilityLevel.UNTRAVERSIBLE
+        sim.ground_truth.traversability[2][2] = TraversabilityLevel.UNTRAVERSABLE
         a = _make_agent("a", 1, 1, 3, 3, AgentAction.WAIT, scan_radius=10)
         sim.add_agent(a)
         sim.run(1)
