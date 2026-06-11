@@ -1,3 +1,4 @@
+import atexit
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,22 +8,35 @@ import matplotlib.colors as mcolors
 from .grid import Grid
 from .state import State
 from .agent import Agent
+from .agents.victim import Victim, Personality, AgeGroup
 from .fire_manager import FireManager
 from .constants import *
 from .metric import Metric
+from .supervisor import Supervisor
 
 logger = logging.getLogger(__name__)
 
 class Simulator:
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int, stopping_condition: StoppingCondition = StoppingCondition.ALL_VICTIMS_FOUND):
         self.width = width
         self.height = height
         self.agents: list[Agent] = []
+        self.victims: list[Victim] = []
         self.ground_truth = State(width, height)
-        self.fire_manager: FireManager = FireManager(width, height, 0.0, 0) #? Start with a non-spreading fire manager, wondering if it is the right way
+        self.fire_manager: FireManager | None = None
         self.metrics = Metric()
+        self.supervisor: Supervisor | None = None
         self.tripping = True
+        self.stopping_condition: StoppingCondition = stopping_condition
+        self.static_victims = False # whether victims are static or move around
+        self.rng = np.random.default_rng()
 
+    def set_supervisor(self, supervisor: Supervisor) -> None:
+        self.supervisor = supervisor
+    
+    def set_fire_manager(self, fire_manager: FireManager) -> None:
+        self.fire_manager = fire_manager
+    
     def add_agent(self, agent: Agent) -> None:
         """
         Adds an agent to the simulation and updates the ground truth
@@ -30,6 +44,9 @@ class Simulator:
         Parameters:
         agent: The agent to add
         """
+        if any(a.name == agent.name for a in self.agents):
+            raise ValueError(f"Agent with name {agent.name} already exists in the simulation.")
+        
         self.agents.append(agent)
         self.ground_truth.agents[agent.y][agent.x] = 1
         self.metrics.register_agent(agent)
@@ -42,14 +59,18 @@ class Simulator:
         Returns:
         A list with elements:
         list[0]: the ground truth state after the step
-        list[1:]: the states of the agents after the step
+        list[1:#agents + 1]: the states of the agents after the step
+        list[#agents + 1]: the supervisor state after the step if supervisor is present
         """
         if not self.metrics.history:
             self.metrics.record_snapshot()  # capture initial metric state
 
         intents = self._collect_intents()
+        logger.debug("Intents: %s", {agent.name: (int(intent[0]), int(intent[1])) for agent, intent in intents.items()})
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
+        self._step_victims()
+        self._rescue_victims_at_exit()
 
         if self.tripping:
             self._perform_trips()
@@ -57,20 +78,46 @@ class Simulator:
         self._apply_vulnerability_damage()
         
         # Perform environment actions (firespread, etc.)
-        self.fire_manager.spread_fire(self.ground_truth)
+        if self.fire_manager is not None:
+            self.fire_manager.spread_fire(self.ground_truth)
 
+        # Agents scan and update the shared supervisor belief state
+        agent_scans: list[Scan] = []
         for agent in self.agents:
-            agent.scan(self.ground_truth)
-            
+            agent_scans.append(agent.scan(self.ground_truth))
+            agent.check_status(self.supervisor, self.ground_truth)
+            if (task := agent.get_current_task()) is not None:
+                logger.debug(f"Agent {agent.name} has task {task.type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
+                logger.debug(f"has path: {agent.get_current_path()}")
+        
+        if self.supervisor is not None:
+            self.supervisor.update_belief(agent_scans, self.victims)
+            self.supervisor.check_for_impatience()
+            self.supervisor.check_explore_tasks()
+
+            if self.supervisor.requires_intervention():
+                self.supervisor.resolve_events(self.agents, self.victims) # victims are passed to be passed to rescue agent
+
+        for victim in self.victims:
+            victim.scan(self.ground_truth)
+
+        # Perform environment actions (firespread, etc.)
+        if self.fire_manager is not None:
+            self.fire_manager.spread_fire(self.ground_truth)
+        
         self.metrics.steps_taken += 1
         self._update_victim_metrics()
         self._update_area_explored()
         self._update_infeasible_states()
+        self._update_inter_agent_distance()
+        self._update_spatial_conflict_count()
         self.metrics.record_snapshot()
 
         res = [self.ground_truth.copy()]
         for agent in self.agents:
             res.append(agent.perception.copy())
+        if self.supervisor is not None:
+            res.append(self.supervisor.shared_belief.copy())
 
         return res
 
@@ -82,9 +129,10 @@ class Simulator:
         steps: The maximum number of steps to perform
 
         Returns:
-        A list of size (#agents + 1) where
+        A list of size (#agents + 2) with supervisor, (#agents + 1) without where
         list[0] are the ground truth states
-        list[1:] are the states of the agents
+        list[1:#agents + 1] are the states of the agents
+        list[#agents + 1] are the supervisor states if supervisor is present
         First element of every list is the initial state before running the simulation
         """
         record: list[list[State]] = []
@@ -94,10 +142,11 @@ class Simulator:
         for agent in self.agents:
             agent.scan(self.ground_truth)
             record.append([agent.perception.copy()])
-
+        if self.supervisor is not None:
+            record.append([self.supervisor.shared_belief.copy()])        
         for _ in range(steps):
             # Record steps
-            logger.info("Step %d =========================", _)
+            logger.debug("Step %d =========================", _)
             step_result = self.step()
             for i in range(len(step_result)):
                 record[i].append(step_result[i])
@@ -129,7 +178,7 @@ class Simulator:
             if not (0 <= tx < self.width and 0 <= ty < self.height):
                 self.metrics.record_terrain_collision(agent)
                 intents[agent] = (agent.x, agent.y)
-            elif self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSIBLE:
+            elif self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSABLE:
                 self.metrics.record_terrain_collision(agent)
                 intents[agent] = (agent.x, agent.y)
             elif self.ground_truth.victims[ty][tx] == VictimPresence.PRESENT:
@@ -200,15 +249,107 @@ class Simulator:
         Parameters:
         intents: The agent intents
         """
+        # pass 1: clear old positions
         for agent, (tx, ty) in intents.items():
             if self.ground_truth.fire[ty, tx] == FireLevel.BURNING:
                 self.metrics.record_fire_collision(agent)
             if (tx, ty) == (agent.x, agent.y):
                 continue
             self.ground_truth.agents[agent.y][agent.x] = 0
+        
+        # pas 2: update new positions
+        for agent, (tx, ty) in intents.items():
+            if (tx, ty) == (agent.x, agent.y):
+                continue
             self.ground_truth.agents[ty][tx] = 1
             agent.move_to(tx, ty)
 
+    def _step_victims(self) -> None:
+        """
+        Move victims with personality-based conflict resolution.
+
+        Phase 1 – collect intents (physical validity only: bounds, walls, rescue agents).
+        Phase 2 – block movers targeting a stayer's cell; for same-target contests pick a
+                  winner by priority (SELFISH > EGOIST > ALTRUIST, coinflip on ties) and
+                  mutate any EGOIST that shared a contest cell with a SELFISH.
+        Phase 3 – commit all moves atomically.
+        """
+        _PRIORITY = {Personality.SELFISH: 2, Personality.EGOIST: 1, Personality.ALTRUIST: 0}
+
+        # Phase 1: intents (physical validity: bounds, walls, agents, occupied victim cells)
+        intents: dict[Victim, tuple[int, int]] = {}
+        for victim in self.victims:
+            action = victim.get_action()
+            if action != AgentAction.WAIT:
+                tx, ty = victim._target_cell(action)
+                valid = (
+                    0 <= tx < self.width and 0 <= ty < self.height
+                    and self.ground_truth.traversability[ty][tx] != TraversabilityLevel.UNTRAVERSABLE
+                    and self.ground_truth.agents[ty][tx] != AgentPresence.PRESENT
+                    and self.ground_truth.victims[ty][tx] != VictimPresence.PRESENT
+                )
+                intents[victim] = (tx, ty) if valid else (victim.x, victim.y)
+            else:
+                intents[victim] = (victim.x, victim.y)
+
+        # Phase 2: conflict resolution
+        stayer_cells = {(v.x, v.y) for v in self.victims if intents[v] == (v.x, v.y)}
+
+        # Block movers heading into an occupied stayer cell
+        for victim in self.victims:
+            if intents[victim] != (victim.x, victim.y) and intents[victim] in stayer_cells:
+                intents[victim] = (victim.x, victim.y)
+
+        # Group movers by target and resolve ties
+        target_groups: dict[tuple[int, int], list[Victim]] = {}
+        for victim in self.victims:
+            if intents[victim] != (victim.x, victim.y):
+                target_groups.setdefault(intents[victim], []).append(victim)
+
+        for contestants in target_groups.values():
+            if len(contestants) <= 1:
+                continue
+
+            # Winner determined by original personality
+            max_prio = max(_PRIORITY[v.personality] for v in contestants)
+            top_tier = [v for v in contestants if _PRIORITY[v.personality] == max_prio]
+            winner_index = self.rng.integers(len(top_tier)) if len(top_tier) > 1 else 0
+            winner = top_tier[winner_index]
+
+            # Mutation: any EGOIST that contested against a SELFISH becomes SELFISH
+            if any(v.personality == Personality.SELFISH for v in contestants):
+                for v in contestants:
+                    if v.personality == Personality.EGOIST:
+                        v.personality = Personality.SELFISH
+
+            for v in contestants:
+                if v is not winner:
+                    intents[v] = (v.x, v.y)
+
+        # Phase 3: commit atomically — clear all old positions before setting new ones
+        # to avoid one victim's clear wiping another's freshly written cell.
+        moves = [(v, tx, ty) for v, (tx, ty) in intents.items() if (tx, ty) != (v.x, v.y)]
+        for victim, _, _ in moves:
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+        for victim, tx, ty in moves:
+            self.ground_truth.victims[ty][tx] = VictimPresence.PRESENT
+            victim.move_to(tx, ty)
+
+
+    def _rescue_victims_at_exit(self) -> None:
+        """
+        Remove any victim that has reached the exit (0,0) and record them as saved.
+        The escorting RescueAgent stays in place at the exit; the supervisory layer
+        will reassign it once implemented.
+        """
+        saved = [v for v in self.victims if v.x < 3 and v.y < 3]
+        for victim in saved:
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+            self.victims.remove(victim)
+            self.metrics.victims_saved += 1
+            if self.metrics.time_to_first_saved is None:
+                self.metrics.time_to_first_saved = self.metrics.steps_taken
+           
     def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.
@@ -217,25 +358,30 @@ class Simulator:
         total = int(truth.sum())
         self.metrics.total_victims = total
         if total == 0:
+            if self.stopping_condition == StoppingCondition.ALL_VICTIMS_RESCUED:
+             self.metrics.outcome = RunOutcome.SUCCESS
             return
 
         union = np.zeros_like(truth, dtype=bool)
         for agent in self.agents:
             union |= (agent.perception.victims.matrix == VictimPresence.PRESENT)
         found = int((truth & union).sum())
+        if found > self.metrics.victims_found:
+            self.metrics.individual_detection_times.append(self.metrics.steps_taken)
         self.metrics.victims_found = found
 
         if found > 0 and self.metrics.time_to_first_found is None:
             self.metrics.time_to_first_found = self.metrics.steps_taken
         if found == total and self.metrics.time_to_all_found is None:
             self.metrics.time_to_all_found = self.metrics.steps_taken
-            self.metrics.outcome = RunOutcome.SUCCESS
+            if self.stopping_condition == StoppingCondition.ALL_VICTIMS_FOUND:
+                self.metrics.outcome = RunOutcome.SUCCESS
 
     def _update_area_explored(self) -> None:
         """
-        Update each agent's fraction of traversable cells they have ever scanned.
+        Update each agent's fraction, and the total of traversable cells they have ever scanned.
         """
-        traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSIBLE)
+        traversable = (self.ground_truth.traversability.matrix == TraversabilityLevel.TRAVERSABLE)
         total = int(traversable.sum())
         self.metrics.total_traversable = total
         if total == 0:
@@ -243,9 +389,15 @@ class Simulator:
                 self.metrics.area_explored[agent] = 0.0
             return
 
+        global_explored = np.zeros_like(traversable, dtype=bool)
+        
         for agent in self.agents:
+            global_explored |= (agent.explored)
             explored = int(agent.explored[traversable].sum())
             self.metrics.area_explored[agent] = explored / total
+        
+        total_explored_count = int(global_explored[traversable].sum())
+        self.metrics.total_explored = total_explored_count / total
 
     def _apply_vulnerability_damage(self) -> None:
         """
@@ -254,6 +406,26 @@ class Simulator:
         for agent in self.agents:
             vulnerability = float(self.ground_truth.vulnerability[agent.y][agent.x])
             self.metrics.record_vulnerable_collision(agent, vulnerability)
+
+    def _update_spatial_conflict_count(self) -> None:
+        self.metrics.total_spatial_conflicts = 0
+        for _, a in enumerate(self.agents):
+            self.metrics.total_spatial_conflicts += a.get_spatial_conflicts()
+
+    def _update_inter_agent_distance(self) -> None:
+        if len(self.agents) < 2:
+            self.metrics.average_inter_agent_distance = 0.0
+            return
+        
+        total_distance = 0.0
+        count = 0
+        for i, agent_a in enumerate(self.agents):
+            for agent_b in self.agents[i+1:]:
+                dist = np.sqrt((agent_a.x - agent_b.x) ** 2 + (agent_a.y - agent_b.y) ** 2)
+                total_distance += dist
+                count += 1
+        
+        self.metrics.average_inter_agent_distance = total_distance / count if count > 0 else 0.0
 
     def _update_infeasible_states(self) -> None:
         for agent in self.agents:
@@ -283,7 +455,7 @@ class Simulator:
                 self.metrics.record_terrain_collision(agent)
                 continue
 
-            is_wall = self.ground_truth.traversability[intended_y][intended_x] == TraversabilityLevel.UNTRAVERSIBLE
+            is_wall = self.ground_truth.traversability[intended_y][intended_x] == TraversabilityLevel.UNTRAVERSABLE
             if is_wall:
                 self.metrics.record_terrain_collision(agent)
                 continue
@@ -313,10 +485,16 @@ class Simulator:
         """
         if config is None:
             config = MapConfig()
+        
         if seed is None:
             seed = (int) (np.random.random() * 1_000_000_000)
-        logger.info(f"Using seed {seed} to generate the map.")
         np.random.seed(seed)
+        
+        def log_seed():
+            logger.info(f"Using seed {seed} to generate the map.")
+        log_seed()
+        atexit.register(log_seed)
+        
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
                                                                                         config.num_rooms, config.unconnected_probability, 
@@ -327,13 +505,24 @@ class Simulator:
         self.ground_truth.vulnerability.matrix = _generate_vulnerability_matrix(self.width, self.height, rooms, tunnels,
                                                                                 config.room_vulnerability_probability, config.tunnel_vulnerability_probability,
                                                                                 config.room_vulnerability_severity, config.tunnel_vulnerability_severity)
-        self.ground_truth.agents.matrix = _place_agents(self.width, self.height, config.num_agents, rooms, self.ground_truth.victims)
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
+        self.victims = []
+        personalities = list(Personality)
+        age_groups = list(AgeGroup)
+        ys, xs = np.nonzero(self.ground_truth.victims.matrix == VictimPresence.PRESENT)
+        for i, (vy, vx) in enumerate(zip(ys, xs)):
+            personality = personalities[np.random.randint(len(personalities))]
+            age_group = age_groups[np.random.randint(len(age_groups))]
+            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, seed=seed)
+            v.scan(self.ground_truth)
+            self.victims.append(v)
 
-        self.fire_manager = FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration)
-        self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
+        self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration, seed))
+        if self.fire_manager is not None:
+            self.fire_manager.initialize_fire(self.ground_truth, config.initial_fire_points, rooms)
 
         self.ground_truth.confidence.matrix = np.ones((self.height, self.width))
+        self.rng = np.random.default_rng(seed)
         return
 
 def _generate_traversability_matrix(
@@ -360,7 +549,7 @@ def _generate_traversability_matrix(
     if not (0 <= u_p <= 1):
         raise ValueError(f"probability of unconnected rooms should be between 0 and 1 but was: {u_p}")
     
-    matrix = np.full((y, x), TraversabilityLevel.UNTRAVERSIBLE)
+    matrix = np.full((y, x), TraversabilityLevel.UNTRAVERSABLE)
     room_seeds = np.zeros((2, n + 1), dtype=int)
     rooms = []
     tunnels = []
@@ -377,7 +566,7 @@ def _generate_traversability_matrix(
     x_end = s_width
     y_start = 0
     y_end = s_length
-    matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSIBLE
+    matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSABLE
     #? Should we store the first room in the rooms list?
 
     # create rooms and store their centers in room_seeds
@@ -388,10 +577,10 @@ def _generate_traversability_matrix(
         room_seeds[0][p] = c
         room_seeds[1][p] = f
 
-        random_width = np.random.randint(w_min, w_max + 1)
+        random_width = np.random.randint(w_min, w_max)
         half_random_width = random_width // 2
 
-        random_length = np.random.randint(l_min, l_max + 1)
+        random_length = np.random.randint(l_min, l_max)
         half_random_length = random_length // 2
 
         x_start = max(0, c - half_random_width)
@@ -399,7 +588,7 @@ def _generate_traversability_matrix(
         y_start = max(0, f - half_random_length)
         y_end = min(y, f + half_random_length + 1)
 
-        matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSIBLE
+        matrix[y_start:y_end, x_start:x_end] = TraversabilityLevel.TRAVERSABLE
         rooms.append({
             'x_range': (x_start, x_end),
             'y_range': (y_start, y_end),
@@ -421,11 +610,11 @@ def _generate_traversability_matrix(
             if (direction == 1): # horizontal first, then vertical # TODO probably should also return the tunnels same as with rooms
                 hx_bounds = get_bounds(a_x, b_x)
                 hy_bounds = (max(0, a_y - half_tunnel_width), min(y, a_y + half_tunnel_width + 1))
-                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
                 
                 vx_bounds = (max(0, b_x - half_tunnel_width), min(x, b_x + half_tunnel_width + 1))
                 vy_bounds = get_bounds(a_y, b_y)
-                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
                 
                 tunnels.append({
                     'horizontal_x_range': hx_bounds,
@@ -436,11 +625,11 @@ def _generate_traversability_matrix(
             else: # vertical first, then horizontal
                 vx_bounds = (max(0, a_x - half_tunnel_width), min(x, a_x + half_tunnel_width + 1))
                 vy_bounds = get_bounds(a_y, b_y)
-                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[vy_bounds[0]:vy_bounds[1], vx_bounds[0]:vx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
                 
                 hx_bounds = get_bounds(a_x, b_x)
                 hy_bounds = (max(0, b_y - half_tunnel_width), min(y, b_y + half_tunnel_width + 1))
-                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSIBLE
+                matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSABLE
 
                 tunnels.append({
                     'horizontal_x_range': hx_bounds,
@@ -498,39 +687,6 @@ def _generate_vulnerability_matrix(
 
     return vulnerability
 
-def _place_agents(
-        x: int, y: int, 
-        n: int, 
-        rooms: list[dict], 
-        victims: Grid
-        ) -> np.ndarray:
-    """
-    Places agents in rooms.
-
-    Parameters:
-    x, y: Dimensions of the grid
-    n: Number of agents
-    rooms: A list of rooms with center and bounds
-    victims: A matrix indicating the presence of victims (to avoid placing agents on top of victims)
-    """
-
-    agents = np.full((y, x), AgentPresence.NOT_PRESENT)
-
-    room_n = len(rooms)
-
-    for _ in range(n):
-        random_room = rooms[np.random.randint(0, room_n)]
-        x_range = random_room['x_range']
-        y_range = random_room['y_range']
-        random_x = np.random.randint(x_range[0], x_range[1])
-        random_y = np.random.randint(y_range[0], y_range[1])
-        while (agents[random_y, random_x] == AgentPresence.PRESENT or victims[random_y, random_x] == VictimPresence.PRESENT):
-            random_x = np.random.randint(x_range[0], x_range[1])
-            random_y = np.random.randint(y_range[0], y_range[1])
-        agents[random_y, random_x] = AgentPresence.PRESENT
-    
-    return agents
-
 def _place_victims(
         x: int, y: int,
         k: int, 
@@ -579,7 +735,7 @@ def visualize_grid_gen(traversability: Grid, agents: Grid, victims: Grid, vulner
 
     vulnerability_mask = np.where(vulnerability.matrix > VulnerabilityLevel.SAFE.value, vulnerability.matrix, np.nan)
     plt.imshow(vulnerability_mask, cmap='autumn_r', interpolation='nearest', alpha=0.3, vmin=0.5, vmax=1)
-    vuln_cmap = plt.cm.autumn_r
+    vuln_cmap = plt.get_cmap('autumn_r')
     
     flammable_mask = np.where(fire.matrix == FireLevel.FLAMMABLE.value, 1, np.nan)
     burning_mask = np.where(fire.matrix == FireLevel.BURNING.value, 1, np.nan)

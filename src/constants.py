@@ -1,10 +1,17 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, IntEnum
+from typing import Any
+from numpy.typing import NDArray
 
 class RunOutcome(Enum):
     IN_PROGRESS = "in_progress"
     SUCCESS = "success"
     TIMEOUT = "timeout"
+
+class StoppingCondition(Enum):
+    ALL_VICTIMS_FOUND = "all_victims_found"
+    ALL_VICTIMS_RESCUED = "all_victims_rescued"
+    TIME_LIMIT = "time_limit"
 
 class AgentAction(IntEnum):
     MOVE_UP = 0
@@ -25,8 +32,8 @@ class VulnerabilityLevel(float, Enum): #? Maybe create a separate TUNNEL vulnera
     HIGH_RISK = 1.0
 
 class TraversabilityLevel(IntEnum):
-    TRAVERSIBLE = 0
-    UNTRAVERSIBLE = 1
+    TRAVERSABLE = 0
+    UNTRAVERSABLE = 1
 
 class AgentPresence(IntEnum):
     NOT_PRESENT = 0
@@ -35,6 +42,92 @@ class AgentPresence(IntEnum):
 class VictimPresence(IntEnum):
     NOT_PRESENT = 0
     PRESENT = 1
+
+class VictimState(Enum):
+    ROAMING = "roaming"             # found by an agent but not yet being rescued
+    SOUGHT = "sought"               # being actively sought by an agent but not yet found
+    BEING_RESCUED = "being_rescued" # being rescued by an agent
+    RESCUED = "rescued"             # fully rescued
+
+@dataclass
+class VictimInfo():
+    name: str
+    x: int
+    y: int
+    state: VictimState
+
+@dataclass
+class Capabilities:
+    exploration: float = 1.0
+    rescuing: float = 1.0
+
+class EventType(Enum):
+    VICTIM_FOUND = "victim_found"
+    INITIALIZING_RESCUE = "initializing_rescue"
+    VICTIM_RESCUED = "victim_rescued"
+    PATH_BLOCKED = "path_blocked"
+    SPATIAL_CONFLICT = "spatial_conflict"
+    LOW_PROGRESS = "low_progress"
+    TASK_COMPLETED = "task_completed"
+
+@dataclass
+class InterventionEvent:
+    type: EventType
+    description: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+class SearchStatus(Enum):
+    SEARCHING = "searching"
+    RESCUING = "rescuing"
+
+class TaskType(Enum):
+    IDLE = "idle"
+    RESCUE = "rescue"
+    EXPLORE = "explore"
+    
+@dataclass
+class Task:
+    type: TaskType
+    x: int = -1
+    y: int = -1
+    weight: float = 1.0
+    room_id: int = -1
+    victim_id: str = ""
+    search_status: SearchStatus = SearchStatus.SEARCHING
+
+    def __hash__(self):
+        return hash((self.type, self.x, self.y))
+
+    def __eq__(self, other):
+        if not isinstance(other, Task):
+            return False
+        return (self.type == other.type and 
+                self.x == other.x and 
+                self.y == other.y)
+
+@dataclass
+class AgentInfo:
+    x: int 
+    y: int
+    task: Task
+    impatience: int
+
+@dataclass
+class Scan:
+    # metadata:
+    agent_name: str
+    agent_x: int 
+    agent_y: int
+
+    # data:
+    xs: NDArray
+    ys: NDArray
+    traversability: NDArray
+    vulnerability: NDArray
+    victims: NDArray
+    agents: NDArray
+    fire: NDArray
+    confidence: NDArray
 
 @dataclass
 class MapConfig:
@@ -55,5 +148,4 @@ class MapConfig:
     max_room_length: int = 12
     min_tunnel_thickness: int = 1
     max_tunnel_thickness: int = 3
-    num_agents: int = 0
     num_victims: int = 2
