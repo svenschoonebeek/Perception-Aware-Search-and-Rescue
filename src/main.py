@@ -127,30 +127,30 @@ def main():
     # df_sdd.to_csv("saved_runs/data/sdd_results.csv")
 
     # * TEST SEED
-    # sim = Simulator(WIDTH, HEIGHT)
+    sim = Simulator(WIDTH, HEIGHT)
 
-    # agent = tmpc
+    agent = tmpc
 
-    # sim.generate_ground_truth(config, 698461091)
-    # sim.add_agent(agent)
+    sim.generate_ground_truth(config, 741315787)
+    sim.add_agent(agent)
 
-    # visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, sim.ground_truth.victims, sim.ground_truth.vulnerability, sim.ground_truth.fire)
+    visualize_grid_gen(sim.ground_truth.traversability, sim.ground_truth.agents, sim.ground_truth.victims, sim.ground_truth.vulnerability, sim.ground_truth.fire)
 
-    # history = sim.run(max_steps)
-    # print(sim.metrics.terrain_collisions[agent], sim.metrics.victim_collisions[agent], sim.metrics.fire_collisions[agent])
+    history = sim.run(max_steps)
+    print(sim.metrics.terrain_collisions[agent], sim.metrics.victim_collisions[agent], sim.metrics.fire_collisions[agent])
 
-    # viz = Visualizer(history, 1200, 1200)
-    # viz.run()
+    viz = Visualizer(history, 1200, 1200)
+    viz.run()
 
     # * HISTORY 
-    viz = Visualizer.from_file("saved_runs/private/sim_20260602_003720_122steps_mpc.pkl")
-    viz.run()
+    # viz = Visualizer.from_file("saved_runs/private/sim_20260602_003720_122steps_mpc.pkl")
+    # viz.run()
 
-    viz = Visualizer.from_file("saved_runs/private/sim_20260602_003814_300steps_tmpc.pkl")
-    viz.run()
+    # viz = Visualizer.from_file("saved_runs/private/sim_20260602_003814_300steps_tmpc.pkl")
+    # viz.run()
     
-    viz = Visualizer.from_file("saved_runs/private/sim_20260602_003614_122steps_sdd.pkl")
-    viz.run()
+    # viz = Visualizer.from_file("saved_runs/private/sim_20260602_003614_122steps_sdd.pkl")
+    # viz.run()
 
     # * Personal
     # seeds = pd.read_csv("saved_runs/data/sdd_results.csv").seed
@@ -163,14 +163,20 @@ def main():
     #     sim.add_agent(agent)
     #     history = sim.run(max_steps)
 
-    #     total_steps = sim.metrics.steps_taken
-    #     logger.info(f"Total steps: {total_steps}\n")
-    #     for step, size in enumerate(agent.tube_sizes):
-    #         progress = step / total_steps
-    #         data.append([seed, progress, size])
+    #     outcome = sim.metrics.outcome.name
+    #     victims_found = sim.metrics.victims_found
+    #     duration = sim.metrics.steps_taken
+    #     wall_collisions = sim.metrics.terrain_collisions[agent]
+    #     victim_collisions = sim.metrics.victim_collisions[agent]
+    #     fire_collisions = sim.metrics.victim_collisions[agent]
+    #     wait_actions = sim.metrics.wait_actions[agent]
+    #     area_explored = sim.metrics.area_explored[agent]
+    #     infeasible_states = sim.metrics.infeasible_states[agent]
+    #     data.append([outcome, victims_found, duration, wall_collisions, victim_collisions, fire_collisions, wait_actions, area_explored, infeasible_states, seed])
+    #     logger.info("Run %d complete in %d steps: %s\n", i + 1, duration, outcome)
 
-    # size_df = pd.DataFrame(data, columns=["seed", "progress", "tube_size"])
-    # size_df.to_csv("saved_runs/data/size_time.csv")
+    # noise_df = pd.DataFrame(data, columns=metrics)
+    # noise_df.to_csv("saved_runs/data/noise_results.csv")
 
 if __name__ == "__main__":
     main()
