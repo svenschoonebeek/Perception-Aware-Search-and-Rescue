@@ -16,15 +16,6 @@ HEIGHT = 35
 
 logger = logging.getLogger(__name__)
 
-def setup_logging(is_debug: bool):
-    """Configures the global logging level and format."""
-    log_level = logging.DEBUG if is_debug else logging.INFO
-
-    logging.basicConfig(
-        level=log_level,
-        format='%(levelname)s - %(message)s',
-    )
-
 def main():
     parser = argparse.ArgumentParser(description="Run the search and rescue simulation.")
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")

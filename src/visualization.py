@@ -57,6 +57,9 @@ class Visualizer:
         self.selected_history_index = 0
 
         first_grid = self.all_histories[0][0]
+        self.num_agents = int((first_grid.agents.matrix == AgentPresence.PRESENT).sum())
+        self.has_supervisor = len(self.all_histories) > self.num_agents + 1
+
         self.rows, self.cols = first_grid.height, first_grid.width
 
         # Calculate cell size based on max grid dimensions
@@ -126,6 +129,7 @@ class Visualizer:
         self.is_playing = False
         self.play_speed = 100 
         self.last_update_time = pygame.time.get_ticks()
+        self.hovered_cell: tuple[int, int] | None = None
 
         # Assets and pre-rendering
         self.load_assets()
@@ -202,7 +206,7 @@ class Visualizer:
             initial_state = self.all_histories[0][0] 
             for y in range(self.rows):
                 for x in range(self.cols):
-                    if initial_state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                    if initial_state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSABLE:
                         self.draw_beveled_wall(self.wall_layer, x, y)
 
     def draw_beveled_wall(self, surface, x, y):
@@ -212,9 +216,9 @@ class Visualizer:
         pygame.draw.line(surface, COLORS["wall_highlight"], rect.topleft, rect.bottomleft, 2)
         pygame.draw.line(surface, COLORS["wall_shadow"], rect.bottomleft, rect.bottomright, 2)
         pygame.draw.line(surface, COLORS["wall_shadow"], rect.topright, rect.bottomright, 2)
-
+        
     def draw_perspective_selector(self):
-        """Draws buttons to switch between Ground Truth and Agents"""
+        """Draws buttons to switch between Ground Truth, Agents and Supervisor perspectives"""
         x, y = self.sidebar_x, self.selector_y
         self.draw_panel_frame(x, y, self.sidebar_w - 20, self.selector_h, "Perspective")
         
@@ -229,7 +233,12 @@ class Visualizer:
             color = COLORS["accent"] if self.selected_history_index == i else COLORS["panel_border"]
             pygame.draw.rect(self.screen, color, btn_rect, border_radius=4)
             
-            label = "GT" if i == 0 else f"A{i}"
+            label = "GT" 
+            if i != 0:
+                label = f"A{i}"
+            if self.has_supervisor and i == len(self.all_histories) - 1:
+                label = "SUP"
+            
             txt = self.small_font.render(label, True, COLORS["text"])
             self.screen.blit(txt, (btn_rect.centerx - txt.get_width()//2, btn_rect.centery - txt.get_height()//2))
 
@@ -266,7 +275,7 @@ class Visualizer:
                 py = y * self.cell_size
 
                 if show_trav and self.selected_history_index != 0:
-                    if state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSIBLE:
+                    if state.traversability.matrix[y][x] == TraversabilityLevel.UNTRAVERSABLE:
                         self.draw_beveled_wall(self.screen, x, y)
                 
                 # Fire
@@ -334,6 +343,12 @@ class Visualizer:
         save_txt = self.small_font.render("SAVE TO FILE", True, COLORS["text"])
         self.screen.blit(save_txt, (self.save_button_rect.centerx - save_txt.get_width()//2, self.save_button_rect.centery - save_txt.get_height()//2))
 
+        # Hovered tile coordinate
+        if self.hovered_cell is not None:
+            hx, hy = self.hovered_cell
+            coord_txt = self.font.render(f"({hx}, {hy})", True, COLORS["text"])
+            self.screen.blit(coord_txt, (10, self.grid_h + 25))
+
         # Slider
         pygame.draw.rect(self.screen, (60, 60, 70), self.slider_rect, border_radius=4)
         progress = self.current_step / max(1, (len(self.ground_truth) - 1))
@@ -381,6 +396,13 @@ class Visualizer:
                     self.is_dragging_slider = False
 
                 # Slider events
+                if event.type == pygame.MOUSEMOTION or event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = pygame.mouse.get_pos()
+                    if 0 <= mx < self.grid_w and 0 <= my < self.grid_h:
+                        self.hovered_cell = (mx // self.cell_size, my // self.cell_size)
+                    else:
+                        self.hovered_cell = None
+
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RIGHT:
                           self.current_step = min(self.current_step + 1, len(self.ground_truth) - 1)

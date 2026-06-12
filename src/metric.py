@@ -12,8 +12,10 @@ class MetricInTime:
     outcome: RunOutcome
     victims_found: int
     total_victims: int
+    victims_saved: int
     time_to_first_found: int | None
     time_to_all_found: int | None
+    time_to_first_saved: int | None
     total_traversable: int
     terrain_collisions: dict[Agent, int]
     victim_collisions: dict[Agent, int]
@@ -22,6 +24,10 @@ class MetricInTime:
     wait_actions: dict[Agent, int]
     damage: dict[Agent, int]
     area_explored: dict[Agent, float]
+    total_explored: float
+    inter_agent_distance: float
+    total_spatial_conflicts: int
+    individual_detection_times: list[int]
 
 
 class Metric:
@@ -38,12 +44,20 @@ class Metric:
         self.steps_taken: int = 0
         self.victims_found: int = 0
         self.total_victims: int = 0
+        self.victims_saved: int = 0
         self.time_to_first_found: int | None = None
         self.time_to_all_found: int | None = None
+        self.time_to_first_saved: int | None = None
 
         # Fraction of traversable cells the agent has ever observed. [0, 1] per agent.
         self.area_explored: dict[Agent, float] = {}
         self.total_traversable: int = 0
+
+        # Supervisory metrics
+        self.total_explored: float = 0.0 # fraction of total traversable area explored by all agents combined, accounting for overlaps
+        self.average_inter_agent_distance: float = 0.0
+        self.total_spatial_conflicts: int = 0
+        self.individual_detection_times: list[int] = [] # time steps at which each victim was found for the first time
 
         # Number of times each agent has reached a state defined as "infeasible" by its controller
         self.infeasible_states: dict[Agent, int] = {}
@@ -91,9 +105,14 @@ class Metric:
             outcome=self.outcome,
             victims_found=self.victims_found,
             total_victims=self.total_victims,
+            victims_saved=self.victims_saved,
             time_to_first_found=self.time_to_first_found,
             time_to_all_found=self.time_to_all_found,
+            time_to_first_saved=self.time_to_first_saved,
             total_traversable=self.total_traversable,
+            total_explored=self.total_explored,
+            inter_agent_distance=self.average_inter_agent_distance,
+            total_spatial_conflicts=self.total_spatial_conflicts,
             terrain_collisions=dict(self.terrain_collisions),
             victim_collisions=dict(self.victim_collisions),
             inter_agent_collisions=dict(self.inter_agent_collisions),
@@ -101,6 +120,7 @@ class Metric:
             wait_actions=dict(self.wait_actions),
             damage=dict(self.damage),
             area_explored=dict(self.area_explored),
+            individual_detection_times=list(self.individual_detection_times),
         )
 
     def record_snapshot(self) -> None:
