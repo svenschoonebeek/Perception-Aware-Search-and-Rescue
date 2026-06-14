@@ -86,6 +86,13 @@ class Victim(Agent):
         self._update_trust()
         in_danger = self._perceives_danger()
 
+        # Personal space: always retreat if a robot is cardinally adjacent, regardless of trust
+        adjacent_robot = self._nearest_adjacent_robot()
+        if adjacent_robot is not None:
+            action = self._move_away_from(*adjacent_robot)
+            if action is not None:
+                return action
+
         # Speed: danger triggers panic → higher move probability
         move_prob = min(1.0, self._base_move_prob * (_DANGER_SPEED_MULTIPLIER if in_danger else 1.0))
         if self.rng.random() > move_prob:
@@ -101,6 +108,35 @@ class Victim(Agent):
         # EGOIST is mutated to SELFISH by the simulator's conflict resolution)
         flee = in_danger or self.personality == Personality.SELFISH
         return self._move_towards_exit_safely() if flee else self._wander_or_seek()
+
+    # ------------------------------------------------------------------
+    # Personal space
+    # ------------------------------------------------------------------
+
+    def _nearest_adjacent_robot(self) -> tuple[int, int] | None:
+        """Returns position of the first cardinally adjacent robot, or None."""
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            nx, ny = self.x + dx, self.y + dy
+            if (0 <= nx < self.world_width and 0 <= ny < self.world_height
+                    and self.perception.agents[ny, nx] == AgentPresence.PRESENT):
+                return (nx, ny)
+        return None
+
+    def _move_away_from(self, rx: int, ry: int) -> AgentAction | None:
+        """Pick the safe action that maximises manhattan distance from (rx, ry)."""
+        best_action: AgentAction | None = None
+        best_dist = -1
+        for action in AgentAction:
+            if action == AgentAction.WAIT:
+                continue
+            nx, ny = self._target_cell(action)
+            if self._cell_safety_score(nx, ny) < 1:
+                continue
+            dist = abs(nx - rx) + abs(ny - ry)
+            if dist > best_dist:
+                best_dist = dist
+                best_action = action
+        return best_action
 
     # ------------------------------------------------------------------
     # Belief: danger perception

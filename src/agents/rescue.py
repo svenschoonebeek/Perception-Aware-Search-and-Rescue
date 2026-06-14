@@ -14,9 +14,10 @@ from src.state import State
 
 EXIT_X, EXIT_Y  = 0, 0
 EXIT_ZONE       = 3     # victims despawn in the EXIT_ZONE × EXIT_ZONE square at (0,0)
-TRUST_THRESHOLD = 0.4   # switch from approach-mode to lead-mode above this
-MAX_FOLLOW_DIST = 5.0   # leash: wait if victim falls this many cells behind
-SIGMA_ROBOT     = 0.1   # how fast the trust estimate updates per unit of Δdistance
+TRUST_THRESHOLD      = 0.4   # switch from approach-mode to lead-mode above this
+MAX_FOLLOW_DIST      = 5.0   # leash: wait if victim falls this many cells behind
+SIGMA_ROBOT          = 0.1   # how fast the trust estimate updates per unit of Δdistance
+PERSONAL_SPACE_DIST  = 1.5   # victim retreats when robot within 1 cell; retreats land ≤ this
 
 logger = logging.getLogger(__name__)
 
@@ -129,9 +130,10 @@ class RescueAgent(TaskMpcAgent):
         """
         τ̂(k+1) = clamp(τ̂(k) + σ_robot · Δdist, 0, 1)
 
-        Victim moved closer → positive Δ → estimated trust rises.
-        Victim moved away   → negative Δ → estimated trust falls.
-        Victim stationary   → tiny positive nudge (sustained presence still builds trust).
+        Victim moved closer          → positive Δ → estimated trust rises.
+        Victim moved away (far)      → negative Δ → estimated trust falls.
+        Victim retreated (≤1 cell)   → personal space, not distrust — treated as neutral.
+        Victim stationary            → tiny positive nudge.
         """
         curr_dist = self._dist_to_victim()
         if self._prev_victim_dist is None:
@@ -139,7 +141,9 @@ class RescueAgent(TaskMpcAgent):
             return self._estimated_trust
 
         delta = self._prev_victim_dist - curr_dist  # positive = victim came closer
-        if delta == 0:
+        if delta < 0 and self._prev_victim_dist <= PERSONAL_SPACE_DIST:
+            delta = 0.01  # victim was adjacent and retreated — personal space, not distrust
+        elif delta == 0:
             delta = 0.01
         self._estimated_trust = max(0.0, min(1.0, self._estimated_trust + delta * SIGMA_ROBOT))
         self._prev_victim_dist = curr_dist
