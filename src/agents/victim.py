@@ -114,11 +114,11 @@ class Victim(Agent):
     # ------------------------------------------------------------------
 
     def _nearest_adjacent_robot(self) -> tuple[int, int] | None:
-        """Returns position of the first cardinally adjacent robot, or None."""
+        """Returns position of the first cardinally adjacent rescue agent, or None."""
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
             nx, ny = self.x + dx, self.y + dy
             if (0 <= nx < self.world_width and 0 <= ny < self.world_height
-                    and self.perception.agents[ny, nx] == AgentPresence.PRESENT):
+                    and self.perception.agents[ny, nx] == AgentPresence.RESCUE_AGENT):
                 return (nx, ny)
         return None
 
@@ -155,8 +155,8 @@ class Victim(Agent):
         return 4.0 if score < 0 else float(4 - score)
 
     def _nearest_robot(self) -> tuple[float, tuple[int, int]] | None:
-        """Returns (distance, (x, y)) of the nearest visible robot, or None."""
-        positions = np.argwhere(self.perception.agents.matrix == AgentPresence.PRESENT)
+        """Returns (distance, (x, y)) of the nearest visible rescue agent, or None."""
+        positions = np.argwhere(self.perception.agents.matrix == AgentPresence.RESCUE_AGENT)
         if len(positions) == 0:
             return None
         distances = np.linalg.norm(positions - np.array([self.y, self.x]), axis=1)

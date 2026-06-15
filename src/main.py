@@ -13,8 +13,8 @@ from .supervisor import Supervisor
 from .util import *
 from .constants import Capabilities, StoppingCondition
 
-WIDTH = 35
-HEIGHT = 35
+WIDTH = 60
+HEIGHT = 60
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +41,10 @@ def main():
     sim.add_agent(agent2)
 
     agent3 = RescueAgent("rescuer3", 0, 2, WIDTH, HEIGHT, 0.01, 0.9, 4, False, None, Capabilities(exploration=1.0, rescuing=1.0))
-    #sim.add_agent(agent3)
+    sim.add_agent(agent3)
 
     agent4 = RescueAgent("rescuer4", 1, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False, None, Capabilities(exploration=1.0, rescuing=1.0))
-    # sim.add_agent(agent4)
+    sim.add_agent(agent4)
 
     supervisor = Supervisor(WIDTH, HEIGHT, 0.01, 8, True)
     sim.set_supervisor(supervisor)
