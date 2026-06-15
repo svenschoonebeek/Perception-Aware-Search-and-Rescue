@@ -71,6 +71,7 @@ class Simulator:
         self._commit_moves(intents)
         self._step_victims()
         self._rescue_victims_at_exit()
+        self._kill_victims_in_fire()
 
         if self.tripping:
             self._perform_trips()
@@ -350,6 +351,14 @@ class Simulator:
             if self.metrics.time_to_first_saved is None:
                 self.metrics.time_to_first_saved = self.metrics.steps_taken
            
+    def _kill_victims_in_fire(self) -> None:
+        """Remove any victim standing on a burning cell and count them as dead."""
+        dead = [v for v in self.victims if self.ground_truth.fire[v.y, v.x] >= FireLevel.BURNING]
+        for victim in dead:
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+            self.victims.remove(victim)
+            self.metrics.victims_dead += 1
+
     def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.
