@@ -70,6 +70,7 @@ class EventType(Enum):
     SPATIAL_CONFLICT = "spatial_conflict"
     LOW_PROGRESS = "low_progress"
     TASK_COMPLETED = "task_completed"
+    RESCUE_ABANDONED = "rescue_abandoned"
 
 @dataclass
 class InterventionEvent:

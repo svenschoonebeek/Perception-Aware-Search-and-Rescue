@@ -18,6 +18,8 @@ TRUST_THRESHOLD      = 0.4   # switch from approach-mode to lead-mode above this
 MAX_FOLLOW_DIST      = 5.0   # leash: wait if victim falls this many cells behind
 SIGMA_ROBOT          = 0.1   # how fast the trust estimate updates per unit of Δdistance
 PERSONAL_SPACE_DIST  = 1.5   # victim retreats when robot within 1 cell; retreats land ≤ this
+LEASH_TIMEOUT        = 10    # ticks of leash-wait before abandoning rescue
+NO_PROGRESS_TIMEOUT  = 15    # ticks without moving (while rescuing) before abandoning rescue
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,9 @@ class RescueAgent(TaskMpcAgent):
         self._estimated_trust: float = 0.0
         self._prev_victim_dist: float | None = None
         self._exit_dist: NDArray = np.full((height, width), -1, dtype=np.int32)
+        self._leash_wait_ticks: int = 0
+        self._no_progress_ticks: int = 0
+        self._last_rescue_pos: tuple[int, int] | None = None
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -50,6 +55,9 @@ class RescueAgent(TaskMpcAgent):
         copy._estimated_trust = self._estimated_trust
         copy._prev_victim_dist = self._prev_victim_dist
         copy._exit_dist = np.copy(self._exit_dist)
+        copy._leash_wait_ticks = self._leash_wait_ticks
+        copy._no_progress_ticks = self._no_progress_ticks
+        copy._last_rescue_pos = self._last_rescue_pos
         return copy
     
     def set_assigned_victim(self, victim: Victim) -> None:
@@ -84,6 +92,9 @@ class RescueAgent(TaskMpcAgent):
             if self.current_task.search_status == SearchStatus.SEARCHING:
                 if distance_to_target <= 3.0:
                     self.current_task.search_status = SearchStatus.RESCUING
+                    self._leash_wait_ticks = 0
+                    self._no_progress_ticks = 0
+                    self._last_rescue_pos = None
                     logger.debug(f"{self.name} is starting rescue for victim {self.current_task.victim_id} at ({self.current_task.x}, {self.current_task.y})")
                     supervisor.trigger_event(InterventionEvent(
                         type=EventType.INITIALIZING_RESCUE,
@@ -100,6 +111,32 @@ class RescueAgent(TaskMpcAgent):
                     supervisor.trigger_event(InterventionEvent(
                         type=EventType.VICTIM_RESCUED,
                         description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
+                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                    ))
+                    self._return_to_idle()
+                    return
+
+                # No-progress timeout: agent position unchanged while rescuing
+                curr_pos = (self.x, self.y)
+                if self._last_rescue_pos == curr_pos:
+                    self._no_progress_ticks += 1
+                else:
+                    self._no_progress_ticks = 0
+                self._last_rescue_pos = curr_pos
+
+                timed_out = (
+                    self._leash_wait_ticks >= LEASH_TIMEOUT
+                    or self._no_progress_ticks >= NO_PROGRESS_TIMEOUT
+                )
+                if timed_out:
+                    reason = "leash wait" if self._leash_wait_ticks >= LEASH_TIMEOUT else "no movement progress"
+                    logger.debug(f"{self.name} abandoning rescue of {self.current_task.victim_id} after {reason} timeout")
+                    self._leash_wait_ticks = 0
+                    self._no_progress_ticks = 0
+                    self._last_rescue_pos = None
+                    supervisor.trigger_event(InterventionEvent(
+                        type=EventType.RESCUE_ABANDONED,
+                        description=f"{self.name} abandoned rescue of {self.current_task.victim_id} due to {reason}",
                         data={"agent": self.name, "victim_id": self.current_task.victim_id}
                     ))
                     self._return_to_idle()
@@ -180,7 +217,9 @@ class RescueAgent(TaskMpcAgent):
         wait rather than racing ahead and leaving them.
         """
         if self._dist_to_victim() > MAX_FOLLOW_DIST:
+            self._leash_wait_ticks += 1
             return AgentAction.WAIT
+        self._leash_wait_ticks = 0
         return self._follow_bfs_to_exit()
 
     # ------------------------------------------------------------------

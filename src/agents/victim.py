@@ -118,7 +118,7 @@ class Victim(Agent):
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
             nx, ny = self.x + dx, self.y + dy
             if (0 <= nx < self.world_width and 0 <= ny < self.world_height
-                    and self.perception.agents[ny, nx] == AgentPresence.RESCUE_AGENT):
+                    and self.perception.agents[ny, nx] > AgentPresence.NOT_PRESENT):
                 return (nx, ny)
         return None
 

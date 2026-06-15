@@ -40,10 +40,11 @@ class Supervisor:
         Checks if there are any events in the queue that require intervention
         """
         immediate_triggers = [
-            EventType.VICTIM_FOUND, 
-            EventType.TASK_COMPLETED, 
-            EventType.INITIALIZING_RESCUE, 
-            EventType.VICTIM_RESCUED
+            EventType.VICTIM_FOUND,
+            EventType.TASK_COMPLETED,
+            EventType.INITIALIZING_RESCUE,
+            EventType.VICTIM_RESCUED,
+            EventType.RESCUE_ABANDONED,
         ]
         has_critical_event = any(e.type in immediate_triggers for e in self.unresolved_events)
         if has_critical_event:
@@ -180,6 +181,21 @@ class Supervisor:
             elif event.type == EventType.VICTIM_RESCUED:
                 self.victim_tracker[event.data["victim_id"]].state = VictimState.RESCUED
                 self.agent_tracker[event.data["agent"]].task = Task(TaskType.IDLE)
+
+            elif event.type == EventType.RESCUE_ABANDONED:
+                agent_name = event.data["agent"]
+                victim_id = event.data["victim_id"]
+                self.agent_tracker[agent_name].task = Task(TaskType.IDLE)
+                if victim_id in self.victim_tracker:
+                    vi = self.victim_tracker[victim_id]
+                    vi.state = VictimState.ROAMING
+                    rescue_task = Task(
+                        TaskType.RESCUE, x=vi.x, y=vi.y,
+                        victim_id=victim_id, search_status=SearchStatus.SEARCHING
+                    )
+                    self.task_backlog.add(rescue_task)
+                    logger.debug(f"Rescue of {victim_id} abandoned by {agent_name}; re-queued at ({vi.x}, {vi.y})")
+                all_agents_bid_flag = True
 
         if extract_frontiers_flag:
             frontiers = self._extract_frontiers()
