@@ -1,7 +1,6 @@
 import ast
 from datetime import date
 import os
-
 import pandas as pd
 from matplotlib import ticker
 import numpy as np
@@ -300,20 +299,46 @@ def extract_useful_run_metrics(metric_history: list[MetricInTime]) -> dict:
     
     distances = [m.inter_agent_distance for m in metric_history if m.inter_agent_distance is not None]
     run_avg_distance = float(np.mean(distances)) if distances else 0.0
+
+    final_m = metric_history[-1]
+    
+    num_agents_in_metric = len(final_m.area_explored)
+    f_global = final_m.total_explored
+    redundancy_ratio = 0.0
+    
+    if num_agents_in_metric > 1 and f_global > 0:
+        sum_individual_fractions = sum(final_m.area_explored.values())
+        max_redundancy = f_global * (num_agents_in_metric - 1)
+        if max_redundancy > 0:
+            redundancy_ratio = max(0.0, min(1.0, float((sum_individual_fractions - f_global) / max_redundancy)))
     
     metrics = {
+        "num_agents" : None,
         "time_to_50": None, "time_to_70": None, "time_to_80": None,
         "time_to_85": None, "time_to_90": None,
-        "time_to_all_found": metric_history[-1].time_to_all_found,
-        "total_steps": metric_history[-1].step,
-        "final_exploration": metric_history[-1].total_explored,
-        "total_spatial_conflicts": metric_history[-1].total_spatial_conflicts,
+        "time_to_all_found": final_m.time_to_all_found,
+        "total_steps": final_m.step,
+        "final_exploration": final_m.total_explored,
+        "total_spatial_conflicts": final_m.total_spatial_conflicts,
         "avg_inter_agent_distance": run_avg_distance,
         "seed": None,
         "mode": None,
         "avg_step_duration": None,
-        "found_victims": metric_history[-1].victims_found,
-        "individual_detection_times": metric_history[-1].individual_detection_times,
+        "found_victims": final_m.victims_found,
+        "individual_detection_times": final_m.individual_detection_times,
+        "total_terrain_collisions": sum(final_m.terrain_collisions.get(agent, 0) for agent in final_m.terrain_collisions.keys()),
+        "total_victim_collisions": sum(final_m.victim_collisions.get(agent, 0) for agent in final_m.victim_collisions.keys()),
+        "total_fire_collisions": sum(final_m.fire_collisions.get(agent, 0) for agent in final_m.fire_collisions.keys()),
+        "total_inter_agent_collisions": sum(final_m.inter_agent_collisions.get(agent, 0) for agent in final_m.inter_agent_collisions.keys()),
+        "total_infeasible_states": sum(final_m.infeasible_states.get(agent, 0) for agent in final_m.infeasible_states.keys()),
+        "total_task_allocations": final_m.total_task_allocations,
+        "total_time_in_high_risk": sum(final_m.time_in_high_risk.get(agent, 0) for agent in final_m.time_in_high_risk.keys()),
+        "total_time_in_vulnerable": sum(final_m.time_in_vulnerable.get(agent, 0) for agent in final_m.time_in_vulnerable.keys()),
+        "total_event_resolve_time": final_m.total_event_resolve_time,
+        "total_event_resolves": final_m.total_event_resolves,
+        "total_wait_actions": sum(final_m.wait_actions.get(agent, 0) for agent in final_m.wait_actions.keys()),
+        "total_damage": sum(final_m.damage.get(agent, 0) for agent in final_m.damage.keys()),
+        "exploration_redundancy": redundancy_ratio
     }
 
     for m in metric_history:

@@ -57,7 +57,6 @@ class Victim(Agent):
         self.age_group = age_group
         self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value] if not is_static else 0.0
         self.rng = np.random.default_rng(seed)
-        self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value]
         self.trust: float = _TRUST_INIT
         self.trust_max: float = _TRUST_MAX
         self._trust_sensitivity: float = _TRUST_SENSITIVITY[personality.value]

@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+from time import time
 
 from .grid import Grid
 from .state import State
@@ -28,7 +29,7 @@ class Simulator:
         self.supervisor: Supervisor | None = None
         self.tripping = True
         self.stopping_condition: StoppingCondition = stopping_condition
-        self.static_victims = False # whether victims are static or move around
+        self.static_victims = True # whether victims are static or move around
         self.rng = np.random.default_rng()
 
     def set_supervisor(self, supervisor: Supervisor) -> None:
@@ -96,7 +97,11 @@ class Simulator:
             self.supervisor.check_explore_tasks()
 
             if self.supervisor.requires_intervention():
-                self.supervisor.resolve_events(self.agents, self.victims) # victims are passed to be passed to rescue agent
+                event_resolve_start_time = time()
+                self.supervisor.resolve_events(self.agents, self.victims, self.metrics) # victims are passed to be passed to rescue agent
+                event_resolve_duration = time() - event_resolve_start_time
+                self.metrics.total_event_resolve_time += event_resolve_duration
+                self.metrics.total_event_resolves += 1
 
         for victim in self.victims:
             victim.scan(self.ground_truth)
@@ -177,7 +182,7 @@ class Simulator:
             tx, ty = agent._target_cell(action)
             if not (0 <= tx < self.width and 0 <= ty < self.height):
                 self.metrics.record_terrain_collision(agent)
-                intents[agent] = (agent.x, agent.y)
+                intents[agent] = (agent.x, agent.y) 
             elif self.ground_truth.traversability[ty][tx] == TraversabilityLevel.UNTRAVERSABLE:
                 self.metrics.record_terrain_collision(agent)
                 intents[agent] = (agent.x, agent.y)

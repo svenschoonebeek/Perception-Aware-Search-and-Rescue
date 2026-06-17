@@ -2,16 +2,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 import numpy as np
 import logging
+from scipy.ndimage import binary_dilation, distance_transform_edt, label
+from scipy.spatial.distance import cdist
+from scipy.cluster.vq import kmeans
+from skimage.morphology import skeletonize
+from time import time
 
 from .util import fast_bfs_array
 from .agent import Agent
 from .agents.victim import Victim
 from .state import State
 from .constants import *
-from scipy.ndimage import binary_dilation, distance_transform_edt, label
-from scipy.spatial.distance import cdist
-from scipy.cluster.vq import kmeans
-from skimage.morphology import skeletonize
+from .metric import Metric
 
 if TYPE_CHECKING:
     from src.agent import Agent
@@ -139,7 +141,7 @@ class Supervisor:
         agent.set_current_path(path)
         self.agent_tracker[agent.name].task = task
 
-    def resolve_events(self, agents: list[Agent], victims: list[Victim]) -> None:
+    def resolve_events(self, agents: list[Agent], victims: list[Victim], metrics: Metric) -> None:
         """
         Assigns tasks to agents based on the events in the queue, and the current shared belief state
         """
@@ -192,11 +194,15 @@ class Supervisor:
         bidding_agents = [a for a in assignable_agents if a.name in bidding_agent_names]
         if all_agents_bid_flag:
             bidding_agents = assignable_agents
-        self._run_task_auction(unassigned_tasks, bidding_agents, victims)
-
-
-    def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent], victims: list[Victim]) -> None:
+        
         if not unassigned_tasks or not bidding_agents:
+            return
+        
+        self._run_task_auction(unassigned_tasks, bidding_agents, victims, metrics)
+
+    def _run_task_auction(self, unassigned_tasks: list[Task], bidding_agents: list[Agent], victims: list[Victim], metrics: Metric) -> None:
+        if not unassigned_tasks or not bidding_agents:
+            logger.debug("No tasks or agents available for auction. Skipping assignment.")
             return
         logger.debug(f"Auctioning these tasks: {unassigned_tasks}")
 
@@ -278,6 +284,7 @@ class Supervisor:
                 #? Currently we just get the victim class from the id, but maybe update rescue to also use an id or something
             
             self._set_agent_task(winning_agent, best_task, best_path)
+            metrics.total_task_allocations += 1
             logger.debug(f"Auction assigned {best_task.type.name} at ({best_task.x}, {best_task.y}) to {winning_agent.name} (Utility: {highest_utility:.1f})")
             logger.debug(f"Assigned path {best_path}")
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .agent import Agent
-from .constants import RunOutcome
+from .constants import RunOutcome, VulnerabilityLevel
 
 @dataclass(frozen=True)
 class MetricInTime:
@@ -28,7 +28,13 @@ class MetricInTime:
     inter_agent_distance: float
     total_spatial_conflicts: int
     individual_detection_times: list[int]
-
+    total_task_allocations: int
+    time_in_high_risk: dict[Agent, int]
+    time_in_vulnerable: dict[Agent, int]
+    infeasible_states: dict[Agent, int]
+    total_event_resolve_time: float
+    total_event_resolves: int
+    exploration_redundancy: float
 
 class Metric:
     def __init__(self):
@@ -58,7 +64,13 @@ class Metric:
         self.average_inter_agent_distance: float = 0.0
         self.total_spatial_conflicts: int = 0
         self.individual_detection_times: list[int] = [] # time steps at which each victim was found for the first time
-
+        self.total_task_allocations: int = 0 # number of times the supervisor allocated tasks
+        self.time_in_high_risk: dict[Agent, int] = {} # Number of time steps each agent spent in high risk areas
+        self.time_in_vulnerable: dict[Agent, int] = {} # Number of time steps each agent spent in vulnerable areas
+        self.total_event_resolve_time: float = 0.0 # time spent resolving events and auctioning
+        self.total_event_resolves: int = 0 # total number of times the supervisor resolved events and auctioned tasks
+        self.exploration_redundancy: float = 0.0
+        
         # Number of times each agent has reached a state defined as "infeasible" by its controller
         self.infeasible_states: dict[Agent, int] = {}
 
@@ -70,6 +82,9 @@ class Metric:
         self.victim_collisions[agent] = 0
         self.inter_agent_collisions[agent] = 0
         self.fire_collisions[agent] = 0
+        self.time_in_high_risk[agent] = 0
+        self.time_in_vulnerable[agent] = 0
+        self.infeasible_states[agent] = 0
         self.wait_actions[agent] = 0
         self.damage[agent] = 0
         self.area_explored[agent] = 0.0
@@ -91,6 +106,11 @@ class Metric:
         self.damage[agent] += 1
 
     def record_vulnerable_collision(self, agent: Agent, vulnerable: float) -> None:
+        if (vulnerable == VulnerabilityLevel.HIGH_RISK):
+            self.time_in_high_risk[agent] += 1
+        elif (vulnerable == VulnerabilityLevel.VULNERABLE):
+            self.time_in_vulnerable[agent] += 1
+        
         rnd = np.random.random()
         if (rnd < vulnerable):
             self.damage[agent] += 1
@@ -113,6 +133,10 @@ class Metric:
             total_explored=self.total_explored,
             inter_agent_distance=self.average_inter_agent_distance,
             total_spatial_conflicts=self.total_spatial_conflicts,
+            total_task_allocations=self.total_task_allocations,
+            total_event_resolve_time=self.total_event_resolve_time,
+            total_event_resolves=self.total_event_resolves,
+            exploration_redundancy=self.exploration_redundancy,
             terrain_collisions=dict(self.terrain_collisions),
             victim_collisions=dict(self.victim_collisions),
             inter_agent_collisions=dict(self.inter_agent_collisions),
@@ -121,6 +145,9 @@ class Metric:
             damage=dict(self.damage),
             area_explored=dict(self.area_explored),
             individual_detection_times=list(self.individual_detection_times),
+            time_in_vulnerable=dict(self.time_in_vulnerable),
+            time_in_high_risk=dict(self.time_in_high_risk),
+            infeasible_states=dict(self.infeasible_states),
         )
 
     def record_snapshot(self) -> None:
