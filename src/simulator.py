@@ -367,6 +367,12 @@ class Simulator:
             self.metrics.victims_saved += 1
             if self.metrics.time_to_first_saved is None:
                 self.metrics.time_to_first_saved = self.metrics.steps_taken
+            if self.supervisor is not None:
+                self.supervisor.trigger_event(InterventionEvent(
+                    type=EventType.VICTIM_RESCUED,
+                    description=f"{victim.name} self-rescued at exit",
+                    data={"agent": "", "victim_id": victim.name}
+                ))
            
     def _kill_victims_in_fire(self) -> None:
         """Remove any victim standing on a burning cell and count them as dead."""
@@ -375,6 +381,12 @@ class Simulator:
             self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
             self.victims.remove(victim)
             self.metrics.victims_dead += 1
+            if self.supervisor is not None:
+                self.supervisor.trigger_event(InterventionEvent(
+                    type=EventType.VICTIM_DIED,
+                    description=f"{victim.name} died in fire",
+                    data={"victim_id": victim.name}
+                ))
 
     def _update_victim_metrics(self) -> None:
         """

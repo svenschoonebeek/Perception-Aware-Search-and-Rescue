@@ -45,6 +45,7 @@ class Supervisor:
             EventType.INITIALIZING_RESCUE,
             EventType.VICTIM_RESCUED,
             EventType.RESCUE_ABANDONED,
+            EventType.VICTIM_DIED,
         ]
         has_critical_event = any(e.type in immediate_triggers for e in self.unresolved_events)
         if has_critical_event:
@@ -174,13 +175,22 @@ class Supervisor:
                 # doesn't get added to the task list because it is just an update for the tracker or agent
             
             elif event.type == EventType.INITIALIZING_RESCUE:
-                logger.debug(f"Initializing rescue for victim {event.data['victim_id']} by agent {event.data['agent']}")
-                self.agent_tracker[event.data["agent"]].task.search_status = SearchStatus.RESCUING
-                self.victim_tracker[event.data["victim_id"]].state = VictimState.BEING_RESCUED
-            
+                agent_name = event.data["agent"]
+                victim_id  = event.data["victim_id"]
+                if victim_id not in self.victim_tracker:
+                    logger.debug(f"INITIALIZING_RESCUE for {victim_id} ignored — victim not in tracker (already rescued/removed)")
+                else:
+                    logger.debug(f"Initializing rescue for {victim_id} by {agent_name}")
+                    self.agent_tracker[agent_name].task.search_status = SearchStatus.RESCUING
+                    self.victim_tracker[victim_id].state = VictimState.BEING_RESCUED
+
             elif event.type == EventType.VICTIM_RESCUED:
-                self.victim_tracker[event.data["victim_id"]].state = VictimState.RESCUED
-                self.agent_tracker[event.data["agent"]].task = Task(TaskType.IDLE)
+                victim_id  = event.data["victim_id"]
+                agent_name = event.data["agent"]
+                if victim_id in self.victim_tracker:
+                    self.victim_tracker[victim_id].state = VictimState.RESCUED
+                if agent_name in self.agent_tracker:
+                    self.agent_tracker[agent_name].task = Task(TaskType.IDLE)
 
             elif event.type == EventType.RESCUE_ABANDONED:
                 agent_name = event.data["agent"]
@@ -196,6 +206,25 @@ class Supervisor:
                     self.task_backlog.add(rescue_task)
                     logger.debug(f"Rescue of {victim_id} abandoned by {agent_name}; re-queued at ({vi.x}, {vi.y})")
                 all_agents_bid_flag = True
+
+            elif event.type == EventType.VICTIM_DIED:
+                victim_id = event.data["victim_id"]
+                if victim_id in self.victim_tracker:
+                    self.victim_tracker[victim_id].state = VictimState.RESCUED  # reuse terminal state
+                self.task_backlog = {t for t in self.task_backlog if t.victim_id != victim_id}
+                for agent in agents:
+                    task = agent.get_current_task()
+                    if task is not None and task.type == TaskType.RESCUE and task.victim_id == victim_id:
+                        agent.set_current_task(Task(TaskType.IDLE))
+                        agent.set_current_path([])
+                        if agent.name in self.agent_tracker:
+                            self.agent_tracker[agent.name].task = Task(TaskType.IDLE)
+                        logger.debug(f"Agent {agent.name} freed from rescue of dead victim {victim_id}")
+                bidding_agent_names.update(
+                    a.name for a in agents
+                    if a.name in self.agent_tracker and self.agent_tracker[a.name].task.type == TaskType.IDLE
+                )
+                extract_frontiers_flag = True
 
         if extract_frontiers_flag:
             frontiers = self._extract_frontiers()

@@ -71,6 +71,7 @@ class EventType(Enum):
     LOW_PROGRESS = "low_progress"
     TASK_COMPLETED = "task_completed"
     RESCUE_ABANDONED = "rescue_abandoned"
+    VICTIM_DIED = "victim_died"
 
 @dataclass
 class InterventionEvent:
