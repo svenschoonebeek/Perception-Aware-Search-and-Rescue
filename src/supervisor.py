@@ -219,14 +219,11 @@ class Supervisor:
                         agent.set_current_path([])
                         if agent.name in self.agent_tracker:
                             self.agent_tracker[agent.name].task = Task(TaskType.IDLE)
+                        bidding_agent_names.add(agent.name)
                         logger.debug(f"Agent {agent.name} freed from rescue of dead victim {victim_id}")
-                bidding_agent_names.update(
-                    a.name for a in agents
-                    if a.name in self.agent_tracker and self.agent_tracker[a.name].task.type == TaskType.IDLE
-                )
                 extract_frontiers_flag = True
 
-        if extract_frontiers_flag:
+        if extract_frontiers_flag:4
             frontiers = self._extract_frontiers()
             # frontiers = self._create_voronoi_partition()
             for fx, fy, fweight, froom_id in frontiers:
