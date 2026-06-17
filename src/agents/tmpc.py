@@ -1,11 +1,15 @@
 from .mpc import MpcAgent
-from ..constants import FireLevel
+from ..constants import AgentAction, FireLevel
 
 class TmpcAgent(MpcAgent):
     def __init__(self, name: str, x: int, y: int, width: int, height: int, 
                  decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool):
         super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff)
         self.fire_spread_rate = 1.0
+    
+    def get_action(self) -> AgentAction:
+        self.tube_size += 1
+        return super().get_action()
 
     def _is_feasible(self) -> bool:
         """

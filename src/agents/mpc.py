@@ -18,7 +18,8 @@ class MpcAgent(Agent):
         # The number of deep-copies of the agent made when calculating the action to take will be 5^horizon
         self.horizon = 4
         self.discount = 0.9 # Discount factor, nearer moves are more important than later moves
-        self.fire_spread_rate = 0.3
+        self.fire_spread_rate = 1.0
+        self.tube_size = 0
 
         self.frontier_distances: NDArray = np.full((self.world_height, self.world_width), -1, dtype=np.int16)
         self.fire_prediction: NDArray = np.zeros((self.world_height, self.world_width), dtype=FireLevel)

@@ -37,6 +37,7 @@ class Agent:
         self.scan_radius = scan_radius # How far the agent can see when it scans
         self.scan_falloff = scan_falloff # Whether scan accuracy should decrease with distance
         self.fire_duration = 10 # Assumed length of time a fire can burn for (SHOULD NEVER BE 0)
+        self.tube_size = 0
 
         # Metrics
         self.illegal_moves = 0
@@ -63,6 +64,7 @@ class Agent:
         copy.scan_radius = self.scan_radius
         copy.scan_falloff = self.scan_falloff
         copy.fire_duration = self.fire_duration
+        copy.tube_size = self.tube_size
 
         copy.illegal_moves = self.illegal_moves
         copy.infeasible_states = self.infeasible_states
