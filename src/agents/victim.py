@@ -26,6 +26,7 @@ _SIGMA_PROX_WEIGHT        = 0.05   # per unit of distance the robot moved closer
 _SIGMA_DANGER_GAIN_WEIGHT = 0.10   # per danger-unit improvement (slow recovery)
 _SIGMA_DANGER_LOSS_WEIGHT = 0.30   # per danger-unit worsening  (fast erosion)
 _TRUST_FOLLOW_THRESHOLD   = 0.4    # above this, victim defers to robot and follows it
+_STUCK_ROBOT_TIMEOUT      = 10      # ticks the rescue robot can stay stationary before victim gives up following
 
 
 class Personality(Enum):
@@ -64,6 +65,10 @@ class Victim(Agent):
         self._prev_danger: float | None = None
         self._prev_robot_dist: float | None = None
         self._curr_robot_pos: tuple[int, int] | None = None
+        self._last_known_robot_pos: tuple[int, int] | None = None
+        self._robot_stuck_ticks: int = 0
+        self._last_own_pos: tuple[int, int] | None = None
+        self._own_stuck_ticks: int = 0
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -76,6 +81,10 @@ class Victim(Agent):
         copy._prev_danger = self._prev_danger
         copy._prev_robot_dist = self._prev_robot_dist
         copy._curr_robot_pos = self._curr_robot_pos
+        copy._last_known_robot_pos = self._last_known_robot_pos
+        copy._robot_stuck_ticks = self._robot_stuck_ticks
+        copy._last_own_pos = self._last_own_pos
+        copy._own_stuck_ticks = self._own_stuck_ticks
         return copy
 
     # ------------------------------------------------------------------
@@ -185,7 +194,34 @@ class Victim(Agent):
         if curr_dist is None:
             self._prev_danger = curr_danger
             self._prev_robot_dist = None
+            self._robot_stuck_ticks = 0
+            self._last_known_robot_pos = None
             return
+
+        # Stuck-robot check: if the rescue agent hasn't moved for N ticks, stop following
+        if self._curr_robot_pos == self._last_known_robot_pos:
+            self._robot_stuck_ticks += 1
+            if self._robot_stuck_ticks >= _STUCK_ROBOT_TIMEOUT:
+                self.trust = 0.0
+                self._robot_stuck_ticks = 0
+        else:
+            self._robot_stuck_ticks = 0
+        self._last_known_robot_pos = self._curr_robot_pos
+
+        # Stuck-victim check: if following a nearby robot but the victim itself isn't moving, drop trust
+        if self.trust >= _TRUST_FOLLOW_THRESHOLD and curr_dist <= self.scan_radius:
+            curr_own_pos = (self.x, self.y)
+            if curr_own_pos == self._last_own_pos:
+                self._own_stuck_ticks += 1
+                if self._own_stuck_ticks >= _STUCK_ROBOT_TIMEOUT:
+                    self.trust = _TRUST_FOLLOW_THRESHOLD * 0.5
+                    self._own_stuck_ticks = 0
+            else:
+                self._own_stuck_ticks = 0
+            self._last_own_pos = curr_own_pos
+        else:
+            self._own_stuck_ticks = 0
+            self._last_own_pos = None
 
         sigma = 0.0
 

@@ -227,12 +227,20 @@ class RescueAgent(TaskMpcAgent):
     # ------------------------------------------------------------------
 
     def _follow_bfs_to_exit(self) -> AgentAction:
-        """Move to the adjacent cell with the smallest BFS distance to exit."""
+        """Move to the adjacent cell with the smallest BFS distance to exit.
+        On ties, prefer cells that maximise Manhattan separation from other rescue agents
+        so two agents navigating the same corridor don't permanently block each other."""
         if self.x == EXIT_X and self.y == EXIT_Y:
             return AgentAction.WAIT
 
+        other_rescue = [
+            (int(p[1]), int(p[0]))
+            for p in np.argwhere(self.perception.agents.matrix == AgentPresence.RESCUE_AGENT)
+            if not (int(p[1]) == self.x and int(p[0]) == self.y)
+        ]
+
         best_action = AgentAction.WAIT
-        best_dist = float('inf')
+        best_score: tuple[int, float] = (float('inf'), float('inf'))
 
         for action in AgentAction:
             if action == AgentAction.WAIT:
@@ -243,8 +251,11 @@ class RescueAgent(TaskMpcAgent):
             d = self._exit_dist[ty][tx]
             if d < 0:
                 continue
-            if d < best_dist:
-                best_dist = d
+
+            proximity = min((abs(tx - ax) + abs(ty - ay) for ax, ay in other_rescue), default=float('inf'))
+            score = (d, -proximity)  # minimise BFS dist first, then maximise agent separation
+            if score < best_score:
+                best_score = score
                 best_action = action
 
         return best_action
