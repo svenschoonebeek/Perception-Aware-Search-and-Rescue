@@ -100,10 +100,6 @@ class Simulator:
 
         # for victim in self.victims:
         #     victim.scan(self.ground_truth)
-
-        # Perform environment actions (firespread, etc.)
-        if self.fire_manager is not None:
-            self.fire_manager.spread_fire(self.ground_truth)
         
         self.metrics.steps_taken += 1
         self._update_victim_metrics()

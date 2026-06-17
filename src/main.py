@@ -37,6 +37,7 @@ def run_single(seed: int, delta: float, config: MapConfig, agent_template: Agent
     """
     sim = Simulator(width, height)
     agent = agent_template.copy()
+    agent.scan_noise = delta
     sim.generate_ground_truth(config, seed)
     sim.add_agent(agent)
  
@@ -67,6 +68,8 @@ def run_single(seed: int, delta: float, config: MapConfig, agent_template: Agent
         seed,
         delta
     ]
+
+    Visualizer(history, 1000, 1000).run()
 
     return seed, delta, duration, outcome, row
 
@@ -120,7 +123,7 @@ def main():
         max_tunnel_thickness=3,
         num_victims=12,
         fire_spread_rate=0.04,
-        fire_duration=15,
+        fire_duration=14,
         initial_fire_points=2
     )
     # Set up pd dataframe with list of columns, rows to be appended 
@@ -138,37 +141,59 @@ def main():
         'seed',
         'delta'
         ]
-    # df_mpc = pd.DataFrame(columns=metrics)
-    # df_tmpc = pd.DataFrame(columns=metrics)
-    # df_sdd = pd.DataFrame(columns=metrics)
 
+    num_sims = 250
     max_steps = 300
     mpc = MpcAgent("mpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.35, 4, True)
     tmpc = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.35, 4, True)
     sdd = SddTmpcAgent("sdd", 1, 1, WIDTH, HEIGHT, 0.05, 0.35, 4, True)
 
-    seeds = pd.read_csv('saved_runs/data/sdd_results.csv').seed
-    deltas = [0.0, 0.05, 0.10, 0.20]
+    # seeds = pd.read_csv('saved_runs/data/sdd_results.csv').seed
+    # deltas = [0.05, 0.10, 0.20]
 
-    # Get first 5 seeds
-    # seeds = seeds[:5]
-    deltas = [0.0]
+    # seeds = np.random.randint(0, 1_000_000_000, size=num_sims)
+    # deltas = [0.0]
 
-    agent_template = tmpc
+    # mpc_df = gather_results(
+    #     seeds,
+    #     deltas,
+    #     config,
+    #     mpc,
+    #     WIDTH,
+    #     HEIGHT,
+    #     max_steps,
+    #     metrics,
+    #     n_workers=N_WORKERS
+    # )
+    # mpc_df.to_csv('saved_runs/data/mpc_results.csv', index=False)
 
-    noise_df = gather_results(
-        seeds,
-        deltas,
-        config,
-        agent_template,
-        WIDTH,
-        HEIGHT,
-        max_steps,
-        metrics,
-        n_workers=N_WORKERS
-    )
+    # tmpc_df = gather_results(
+    #     seeds,
+    #     deltas,
+    #     config,
+    #     tmpc,
+    #     WIDTH,
+    #     HEIGHT,
+    #     max_steps,
+    #     metrics,
+    #     n_workers=N_WORKERS
+    # )
+    # tmpc_df.to_csv('saved_runs/data/tmpc_results.csv', index=False)
 
-    noise_df.to_csv('saved_runs/data/tmpc_results.csv', index=False)
+    # sdd_df = gather_results(
+    #     seeds,
+    #     deltas,
+    #     config,
+    #     sdd,
+    #     WIDTH,
+    #     HEIGHT,
+    #     max_steps,
+    #     metrics,
+    #     n_workers=N_WORKERS
+    # )
+    # sdd_df.to_csv('saved_runs/data/sdd_results.csv', index=False)
+
+    run_single(874710640, 0, config, sdd, WIDTH, HEIGHT, max_steps)
 
 if __name__ == "__main__":
     main()

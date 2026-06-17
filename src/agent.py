@@ -38,6 +38,7 @@ class Agent:
         self.scan_falloff = scan_falloff # Whether scan accuracy should decrease with distance
         self.fire_duration = 10 # Assumed length of time a fire can burn for (SHOULD NEVER BE 0)
         self.tube_size = 0
+        self.scan_noise = 0.0
 
         # Metrics
         self.illegal_moves = 0
@@ -65,6 +66,7 @@ class Agent:
         copy.scan_falloff = self.scan_falloff
         copy.fire_duration = self.fire_duration
         copy.tube_size = self.tube_size
+        copy.scan_noise = self.scan_noise
 
         copy.illegal_moves = self.illegal_moves
         copy.infeasible_states = self.infeasible_states
@@ -95,8 +97,9 @@ class Agent:
         self.perception.agents[visible] = agnt = state.agents[visible]
         self.perception.fire[visible] = fire = state.fire[visible]
 
-        # noise = (np.random.random((self.world_height, self.world_width)) - 0.5) / 10 # [-0.05, 0.05)
-        # self.perception.vulnerability[visible] = vuln = np.clip(state.vulnerability[visible] + noise[visible], 0, 1)
+        if self.scan_noise > 0:
+            noise = (np.random.random((self.world_height, self.world_width)) - 0.5) * (2 * self.scan_noise)
+            self.perception.vulnerability[visible] = vuln = np.clip(state.vulnerability[visible] + noise[visible], 0, 1)
 
         self.discovered = visible & ~self.explored
         self.explored[visible] = True
