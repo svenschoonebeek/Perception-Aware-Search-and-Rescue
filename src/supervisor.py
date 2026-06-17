@@ -223,7 +223,7 @@ class Supervisor:
                         logger.debug(f"Agent {agent.name} freed from rescue of dead victim {victim_id}")
                 extract_frontiers_flag = True
 
-        if extract_frontiers_flag:4
+        if extract_frontiers_flag:
             frontiers = self._extract_frontiers()
             # frontiers = self._create_voronoi_partition()
             for fx, fy, fweight, froom_id in frontiers:
