@@ -96,7 +96,8 @@ class Simulator:
             self.supervisor.update_belief(agent_scans, self.victims)
             self.supervisor.check_for_impatience()
             self.supervisor.check_explore_tasks()
-
+            self.supervisor.update_agent_victim_targets(self.agents)
+            
             if self.supervisor.requires_intervention():
                 self.supervisor.resolve_events(self.agents, self.victims) # victims are passed to be passed to rescue agent
 

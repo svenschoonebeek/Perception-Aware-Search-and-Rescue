@@ -105,6 +105,14 @@ class Supervisor:
                 self.shared_belief.agents[y][x] = agnt
                 self.shared_belief.fire[y][x] = fire
                 self.shared_belief.confidence.matrix[y][x] = conf
+    
+    def update_agent_victim_targets(self, agents: list[Agent]) -> None:
+        for agent in agents:
+            task = agent.get_current_task()
+            if task and task.type == TaskType.RESCUE and task.victim_id in self.victim_tracker:
+                victim_info = self.victim_tracker[task.victim_id]
+                task.x = victim_info.x
+                task.y = victim_info.y
 
     def check_for_impatience(self) -> None:
         for agent_name in self.agent_tracker.keys():
