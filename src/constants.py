@@ -37,7 +37,8 @@ class TraversabilityLevel(IntEnum):
 
 class AgentPresence(IntEnum):
     NOT_PRESENT = 0
-    PRESENT = 1
+    PRESENT = 1      # MPC / non-rescue agents
+    RESCUE_AGENT = 2 # rescue agents — victims react only to these
 
 class VictimPresence(IntEnum):
     NOT_PRESENT = 0
@@ -69,6 +70,8 @@ class EventType(Enum):
     SPATIAL_CONFLICT = "spatial_conflict"
     LOW_PROGRESS = "low_progress"
     TASK_COMPLETED = "task_completed"
+    RESCUE_ABANDONED = "rescue_abandoned"
+    VICTIM_DIED = "victim_died"
 
 @dataclass
 class InterventionEvent:

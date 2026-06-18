@@ -13,6 +13,7 @@ class MetricInTime:
     victims_found: int
     total_victims: int
     victims_saved: int
+    victims_dead: int
     time_to_first_found: int | None
     time_to_all_found: int | None
     time_to_first_saved: int | None
@@ -51,6 +52,7 @@ class Metric:
         self.victims_found: int = 0
         self.total_victims: int = 0
         self.victims_saved: int = 0
+        self.victims_dead: int = 0
         self.time_to_first_found: int | None = None
         self.time_to_all_found: int | None = None
         self.time_to_first_saved: int | None = None
@@ -126,6 +128,7 @@ class Metric:
             victims_found=self.victims_found,
             total_victims=self.total_victims,
             victims_saved=self.victims_saved,
+            victims_dead=self.victims_dead,
             time_to_first_found=self.time_to_first_found,
             time_to_all_found=self.time_to_all_found,
             time_to_first_saved=self.time_to_first_saved,

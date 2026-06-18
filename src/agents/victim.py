@@ -26,6 +26,7 @@ _SIGMA_PROX_WEIGHT        = 0.05   # per unit of distance the robot moved closer
 _SIGMA_DANGER_GAIN_WEIGHT = 0.10   # per danger-unit improvement (slow recovery)
 _SIGMA_DANGER_LOSS_WEIGHT = 0.30   # per danger-unit worsening  (fast erosion)
 _TRUST_FOLLOW_THRESHOLD   = 0.4    # above this, victim defers to robot and follows it
+_STUCK_ROBOT_TIMEOUT      = 10      # ticks the rescue robot can stay stationary before victim gives up following
 
 
 class Personality(Enum):
@@ -63,6 +64,10 @@ class Victim(Agent):
         self._prev_danger: float | None = None
         self._prev_robot_dist: float | None = None
         self._curr_robot_pos: tuple[int, int] | None = None
+        self._last_known_robot_pos: tuple[int, int] | None = None
+        self._robot_stuck_ticks: int = 0
+        self._last_own_pos: tuple[int, int] | None = None
+        self._own_stuck_ticks: int = 0
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -75,6 +80,10 @@ class Victim(Agent):
         copy._prev_danger = self._prev_danger
         copy._prev_robot_dist = self._prev_robot_dist
         copy._curr_robot_pos = self._curr_robot_pos
+        copy._last_known_robot_pos = self._last_known_robot_pos
+        copy._robot_stuck_ticks = self._robot_stuck_ticks
+        copy._last_own_pos = self._last_own_pos
+        copy._own_stuck_ticks = self._own_stuck_ticks
         return copy
 
     # ------------------------------------------------------------------
@@ -84,6 +93,13 @@ class Victim(Agent):
     def get_action(self) -> AgentAction:
         self._update_trust()
         in_danger = self._perceives_danger()
+
+        # Personal space: always retreat if a robot is cardinally adjacent, regardless of trust
+        adjacent_robot = self._nearest_adjacent_robot()
+        if adjacent_robot is not None:
+            action = self._move_away_from(*adjacent_robot)
+            if action is not None:
+                return action
 
         # Speed: danger triggers panic → higher move probability
         move_prob = min(1.0, self._base_move_prob * (_DANGER_SPEED_MULTIPLIER if in_danger else 1.0))
@@ -102,6 +118,35 @@ class Victim(Agent):
         return self._move_towards_exit_safely() if flee else self._wander_or_seek()
 
     # ------------------------------------------------------------------
+    # Personal space
+    # ------------------------------------------------------------------
+
+    def _nearest_adjacent_robot(self) -> tuple[int, int] | None:
+        """Returns position of the first cardinally adjacent rescue agent, or None."""
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            nx, ny = self.x + dx, self.y + dy
+            if (0 <= nx < self.world_width and 0 <= ny < self.world_height
+                    and self.perception.agents[ny, nx] > AgentPresence.NOT_PRESENT):
+                return (nx, ny)
+        return None
+
+    def _move_away_from(self, rx: int, ry: int) -> AgentAction | None:
+        """Pick the safe action that maximises manhattan distance from (rx, ry)."""
+        best_action: AgentAction | None = None
+        best_dist = -1
+        for action in AgentAction:
+            if action == AgentAction.WAIT:
+                continue
+            nx, ny = self._target_cell(action)
+            if self._cell_safety_score(nx, ny) < 1:
+                continue
+            dist = abs(nx - rx) + abs(ny - ry)
+            if dist > best_dist:
+                best_dist = dist
+                best_action = action
+        return best_action
+
+    # ------------------------------------------------------------------
     # Belief: danger perception
     # ------------------------------------------------------------------
 
@@ -118,8 +163,8 @@ class Victim(Agent):
         return 4.0 if score < 0 else float(4 - score)
 
     def _nearest_robot(self) -> tuple[float, tuple[int, int]] | None:
-        """Returns (distance, (x, y)) of the nearest visible robot, or None."""
-        positions = np.argwhere(self.perception.agents.matrix == AgentPresence.PRESENT)
+        """Returns (distance, (x, y)) of the nearest visible rescue agent, or None."""
+        positions = np.argwhere(self.perception.agents.matrix == AgentPresence.RESCUE_AGENT)
         if len(positions) == 0:
             return None
         distances = np.linalg.norm(positions - np.array([self.y, self.x]), axis=1)
@@ -148,7 +193,34 @@ class Victim(Agent):
         if curr_dist is None:
             self._prev_danger = curr_danger
             self._prev_robot_dist = None
+            self._robot_stuck_ticks = 0
+            self._last_known_robot_pos = None
             return
+
+        # Stuck-robot check: if the rescue agent hasn't moved for N ticks, stop following
+        if self._curr_robot_pos == self._last_known_robot_pos:
+            self._robot_stuck_ticks += 1
+            if self._robot_stuck_ticks >= _STUCK_ROBOT_TIMEOUT:
+                self.trust = 0.0
+                self._robot_stuck_ticks = 0
+        else:
+            self._robot_stuck_ticks = 0
+        self._last_known_robot_pos = self._curr_robot_pos
+
+        # Stuck-victim check: if following a nearby robot but the victim itself isn't moving, drop trust
+        if self.trust >= _TRUST_FOLLOW_THRESHOLD and curr_dist <= self.scan_radius:
+            curr_own_pos = (self.x, self.y)
+            if curr_own_pos == self._last_own_pos:
+                self._own_stuck_ticks += 1
+                if self._own_stuck_ticks >= _STUCK_ROBOT_TIMEOUT:
+                    self.trust = _TRUST_FOLLOW_THRESHOLD * 0.5
+                    self._own_stuck_ticks = 0
+            else:
+                self._own_stuck_ticks = 0
+            self._last_own_pos = curr_own_pos
+        else:
+            self._own_stuck_ticks = 0
+            self._last_own_pos = None
 
         sigma = 0.0
 

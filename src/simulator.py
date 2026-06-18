@@ -49,7 +49,7 @@ class Simulator:
             raise ValueError(f"Agent with name {agent.name} already exists in the simulation.")
         
         self.agents.append(agent)
-        self.ground_truth.agents[agent.y][agent.x] = 1
+        self.ground_truth.agents[agent.y][agent.x] = AgentPresence.PRESENT
         self.metrics.register_agent(agent)
 
     def step(self) -> list[State]:
@@ -72,6 +72,7 @@ class Simulator:
         self._commit_moves(intents)
         self._step_victims()
         self._rescue_victims_at_exit()
+        self._kill_victims_in_fire()
 
         if self.tripping:
             self._perform_trips()
@@ -90,12 +91,14 @@ class Simulator:
             if (task := agent.get_current_task()) is not None:
                 logger.debug(f"Agent {agent.name} has task {task.type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
                 logger.debug(f"has path: {agent.get_current_path()}")
+        self._refresh_agent_presence()
         
         if self.supervisor is not None:
             self.supervisor.update_belief(agent_scans, self.victims)
             self.supervisor.check_for_impatience()
             self.supervisor.check_explore_tasks()
-
+            self.supervisor.update_agent_victim_targets(self.agents)
+            
             if self.supervisor.requires_intervention():
                 event_resolve_start_time = time()
                 self.supervisor.resolve_events(self.agents, self.victims, self.metrics) # victims are passed to be passed to rescue agent
@@ -266,8 +269,24 @@ class Simulator:
         for agent, (tx, ty) in intents.items():
             if (tx, ty) == (agent.x, agent.y):
                 continue
-            self.ground_truth.agents[ty][tx] = 1
+            self.ground_truth.agents[ty][tx] = AgentPresence.PRESENT
             agent.move_to(tx, ty)
+
+    def _refresh_agent_presence(self) -> None:
+        """
+        Rewrites each agent's cell in the ground truth with the correct presence value
+        based on their current task. Called every step after check_status so that task
+        transitions (explore → rescuing) are immediately visible in the agents grid.
+        """
+        for agent in self.agents:
+            task = agent.get_current_task()
+            is_rescuing = (
+                task is not None
+                and task.type == TaskType.RESCUE
+                and task.search_status == SearchStatus.RESCUING
+            )
+            presence = AgentPresence.RESCUE_AGENT if is_rescuing else AgentPresence.PRESENT
+            self.ground_truth.agents[agent.y][agent.x] = presence
 
     def _step_victims(self) -> None:
         """
@@ -290,7 +309,7 @@ class Simulator:
                 valid = (
                     0 <= tx < self.width and 0 <= ty < self.height
                     and self.ground_truth.traversability[ty][tx] != TraversabilityLevel.UNTRAVERSABLE
-                    and self.ground_truth.agents[ty][tx] != AgentPresence.PRESENT
+                    and self.ground_truth.agents[ty][tx] == AgentPresence.NOT_PRESENT
                     and self.ground_truth.victims[ty][tx] != VictimPresence.PRESENT
                 )
                 intents[victim] = (tx, ty) if valid else (victim.x, victim.y)
@@ -354,7 +373,27 @@ class Simulator:
             self.metrics.victims_saved += 1
             if self.metrics.time_to_first_saved is None:
                 self.metrics.time_to_first_saved = self.metrics.steps_taken
+            if self.supervisor is not None:
+                self.supervisor.trigger_event(InterventionEvent(
+                    type=EventType.VICTIM_RESCUED,
+                    description=f"{victim.name} self-rescued at exit",
+                    data={"agent": "", "victim_id": victim.name}
+                ))
            
+    def _kill_victims_in_fire(self) -> None:
+        """Remove any victim standing on a burning cell and count them as dead."""
+        dead = [v for v in self.victims if self.ground_truth.fire[v.y, v.x] >= FireLevel.BURNING]
+        for victim in dead:
+            self.ground_truth.victims[victim.y][victim.x] = VictimPresence.NOT_PRESENT
+            self.victims.remove(victim)
+            self.metrics.victims_dead += 1
+            if self.supervisor is not None:
+                self.supervisor.trigger_event(InterventionEvent(
+                    type=EventType.VICTIM_DIED,
+                    description=f"{victim.name} died in fire",
+                    data={"victim_id": victim.name}
+                ))
+
     def _update_victim_metrics(self) -> None:
         """
         Update the found metrics based on the current ground truth state.

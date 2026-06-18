@@ -57,7 +57,7 @@ class Visualizer:
         self.selected_history_index = 0
 
         first_grid = self.all_histories[0][0]
-        self.num_agents = int((first_grid.agents.matrix == AgentPresence.PRESENT).sum())
+        self.num_agents = int((first_grid.agents.matrix > AgentPresence.NOT_PRESENT).sum())
         self.has_supervisor = len(self.all_histories) > self.num_agents + 1
 
         self.rows, self.cols = first_grid.height, first_grid.width
@@ -147,7 +147,10 @@ class Visualizer:
         try:
             self.agent_sprite = pygame.image.load("assets/robot.png").convert_alpha()
             self.agent_sprite = pygame.transform.scale(self.agent_sprite, (self.cell_size, self.cell_size))
-            
+
+            self.rescue_agent_sprite = pygame.image.load("assets/rescue_bot.png").convert_alpha()
+            self.rescue_agent_sprite = pygame.transform.scale(self.rescue_agent_sprite, (self.cell_size, self.cell_size))
+
             self.victim_sprite = pygame.image.load("assets/victim_bloody.png").convert_alpha()
             self.victim_sprite = pygame.transform.scale(self.victim_sprite, (self.cell_size, self.cell_size))
         except:
@@ -306,13 +309,22 @@ class Visualizer:
                         pygame.draw.circle(self.screen, COLORS["danger"], (center_x, center_y), radius)
 
                 # Agents
-                if show_agnt and state.agents.matrix[y][x] == AgentPresence.PRESENT:
-                    if self.use_sprites:
-                        self.screen.blit(self.agent_sprite, (px, py))
-                    else:
-                        pad = self.cell_size * 0.15
-                        size = max(1, self.cell_size * 0.7)
-                        pygame.draw.rect(self.screen, COLORS["accent"], (px + pad, py + pad, size, size))
+                if show_agnt:
+                    agent_val = state.agents.matrix[y][x]
+                    if agent_val == AgentPresence.RESCUE_AGENT:
+                        if self.use_sprites:
+                            self.screen.blit(self.rescue_agent_sprite, (px, py))
+                        else:
+                            pad = self.cell_size * 0.15
+                            size = max(1, self.cell_size * 0.7)
+                            pygame.draw.rect(self.screen, (50, 200, 100), (px + pad, py + pad, size, size))
+                    elif agent_val == AgentPresence.PRESENT:
+                        if self.use_sprites:
+                            self.screen.blit(self.agent_sprite, (px, py))
+                        else:
+                            pad = self.cell_size * 0.15
+                            size = max(1, self.cell_size * 0.7)
+                            pygame.draw.rect(self.screen, COLORS["accent"], (px + pad, py + pad, size, size))
 
                 # Vulnerability
                 if show_vuln:
