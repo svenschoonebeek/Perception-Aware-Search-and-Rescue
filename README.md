@@ -66,10 +66,10 @@ The `runner.py` script automatically exports mission results to a CSV file in th
 
 This project was developed in collaboration with the following team members and academic supervisors from TU Delft:
 
-* **Tigo Schutgens** ([t.r.schutgens@student.tudelft.nl](mailto:t.r.schutgens@student.tudelft.nl))
-* **Jacob Dimša** ([j.dimsa-1@student.tudelft.nl](mailto:j.dimsa-1@student.tudelft.nl))
-* **Nicolas Laplagne** ([n.e.laplagne@student.tudelft.nl](mailto:n.e.laplagne@student.tudelft.nl))
-* **Filip Keerberg** ([f.o.b.keerberg@student.tudelft.nl](mailto:f.o.b.keerberg@student.tudelft.nl))
-* **Maria Grouev** ([m.p.grouev@student.tudelft.nl](mailto:m.p.grouev@student.tudelft.nl))
-* **Sven Schoonebeek** ([s.schoonebeek@tudelft.nl](mailto:s.schoonebeek@tudelft.nl)) – *Supervisor*
-* **Prof. Dr. Anahita Jamshidnejad** ([a.jamshidnejad@tudelft.nl](mailto:a.jamshidnejad@tudelft.nl)) – *Responsible Professor*
+* **Tigo Schutgens**
+* **Jacob Dimša**
+* **Nicolas Laplagne**
+* **Filip Keerberg**
+* **Maria Grouev**
+* **Sven Schoonebeek** – *Supervisor*
+* **Prof. Dr. Anahita Jamshidnejad** – *Responsible Professor*
