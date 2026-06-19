@@ -1,93 +1,75 @@
-# RP 2026 - Autonomous Search and Rescue
+
+---
+
+# Coordination-Aware Task Allocation in Multi-Agent Search and Rescue
+
+This repository contains the simulation environment and control architecture for the bachelor's thesis: **"Coordination-Aware Task Allocation Via a Lightweight Supervisory Layer: An Event-Driven Approach to Multi-Agent Search and Rescue"**.
+
+> **Academic Context:** This project was developed by T.R. Schutgens as part of the [TU Delft CSE3000 Research Project (2026)](https://cse3000-research-project.github.io/) for the EEMCS Faculty. An electronic version of the associated thesis will be made available at the [TU Delft Education Repository](http://repository.tudelft.nl/).
+
+## Overview
+
+In multi-robot Search and Rescue (SaR) missions, autonomous agents must operate in highly volatile environments with strict safety constraints. This project implements a hybrid task-allocation architecture that bridges the gap between centralized planning and decentralized execution.
+
+The system relies on local Model Predictive Control (MPC) for safe, autonomous navigation and obstacle avoidance, while a centralized, event-driven supervisor manages high-level task allocation via a Sequential Single-Item (SSI) auction. The supervisor remains dormant to save computational overhead and only intervenes upon discrete triggers:
+
+* **Spatial Conflicts**
+
+* **Agent Stagnation (Impatience)**
+
+* **Victim Discovery**
+
+
+## Features
+
+* **Procedural Map Generation:** A parameterized room-and-tunnel generator simulating structured indoor environments with dynamic fire spread and structural vulnerabilities.
+
+
+* **Heterogeneous Fleet Support:** Support for multiple types of agents, to be added in the `agents` directory.
+
+
+* **Game-Theoretic Victim Behavior:** Victims are modeled using a GT-BDI architecture, simulating realistic panic, wandering, and trust-building proximity mechanics.
+
+
+* **Performance Metrics:** Built-in extraction of key mission metrics.
 
 
 
-## Getting started
+## Getting Started
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+### Prerequisites
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+* Python 3.12+
 
-## Add your files
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+* Standard scientific libraries (`numpy`, `pandas`, `scipy`)
 
+### Running a Simulation
+
+To run a single simulation with the visualizer enabled, execute the main script:
+
+```bash
+python -m src.main --debug
 ```
-cd existing_repo
-git remote add origin https://gitlab.ewi.tudelft.nl/nlaplagne/rp-2026-autonomous-search-and-rescue.git
-git branch -M main
-git push -uf origin main
+
+To run a headless batch simulation for statistical data gathering (comparing Supervised, Unsupervised, and Shared Map architectures):
+
+```bash
+python -m src.runner
 ```
 
-## Integrate with your tools
+## Data & Evaluation
 
-* [Set up project integrations](https://gitlab.ewi.tudelft.nl/nlaplagne/rp-2026-autonomous-search-and-rescue/-/settings/integrations)
+The `runner.py` script automatically exports mission results to a CSV file in the `sim_data/` directory and prints a detailed console evaluation covering exploration milestones, computation times, and safety metrics (e.g., collision avoidance).
 
-## Collaborate with your team
+## Team & Collaborators
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+This project was developed in collaboration with the following team members and academic supervisors from TU Delft:
 
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+* **Tigo Schutgens** ([t.r.schutgens@student.tudelft.nl](mailto:t.r.schutgens@student.tudelft.nl))
+* **Jacob Dimša** ([j.dimsa-1@student.tudelft.nl](mailto:j.dimsa-1@student.tudelft.nl))
+* **Nicolas Laplagne** ([n.e.laplagne@student.tudelft.nl](mailto:n.e.laplagne@student.tudelft.nl))
+* **Filip Keerberg** ([f.o.b.keerberg@student.tudelft.nl](mailto:f.o.b.keerberg@student.tudelft.nl))
+* **Maria Grouev** ([m.p.grouev@student.tudelft.nl](mailto:m.p.grouev@student.tudelft.nl))
+* **Sven Schoonebeek** ([s.schoonebeek@tudelft.nl](mailto:s.schoonebeek@tudelft.nl)) – *Supervisor*
+* **Prof. Dr. Anahita Jamshidnejad** ([a.jamshidnejad@tudelft.nl](mailto:a.jamshidnejad@tudelft.nl)) – *Responsible Professor*
