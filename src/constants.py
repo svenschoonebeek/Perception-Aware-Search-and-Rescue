@@ -119,6 +119,7 @@ class AgentInfo:
 class Scan:
     # metadata:
     agent_name: str
+    rescue_agent: bool
     agent_x: int 
     agent_y: int
 

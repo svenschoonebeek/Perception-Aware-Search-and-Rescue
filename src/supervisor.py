@@ -86,7 +86,7 @@ class Supervisor:
             self.global_explored[scan.ys, scan.xs] = True
 
             for x, y, trvs, vuln, vict, agnt, fire, conf in zip(scan.xs, scan.ys, scan.traversability, scan.vulnerability, scan.victims, scan.agents, scan.fire, scan.confidence):
-                if vict == VictimPresence.PRESENT:
+                if vict == VictimPresence.PRESENT and scan.rescue_agent:
                     found_victim = next((v for v in victims_list if v.x == x and v.y == y), None)
                     if found_victim is not None:
                         vid = found_victim.name
@@ -108,7 +108,7 @@ class Supervisor:
                 self.shared_belief.fire[y][x] = fire
                 self.shared_belief.confidence.matrix[y][x] = conf
     
-    def update_agent_victim_targets(self, agents: list[Agent]) -> None:
+    def update_agent_victim_targets(self, agents: list[Agent]) -> None:    
         for agent in agents:
             task = agent.get_current_task()
             if task and task.type == TaskType.RESCUE and task.victim_id in self.victim_tracker:
@@ -163,7 +163,7 @@ class Supervisor:
         logger.debug(f"Supervisor is resolving events: {[e.description for e in self.unresolved_events]}")
         while self.unresolved_events:
             event = self.unresolved_events.pop(0)
-            if event.type == EventType.SPATIAL_CONFLICT or event.type == EventType.LOW_PROGRESS:
+            if (event.type == EventType.SPATIAL_CONFLICT or event.type == EventType.LOW_PROGRESS):
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
             
@@ -176,7 +176,6 @@ class Supervisor:
             elif event.type == EventType.PATH_BLOCKED:
                 bidding_agent_names.add(event.data["agent"])
                 extract_frontiers_flag = True
-                # TODO change this for the agent to resolve locally?
             
             elif event.type == EventType.TASK_COMPLETED: # if agent sets itsself to idle, or supervisor detects an explore task is completed
                 completed_agent_name = event.data["agent"]

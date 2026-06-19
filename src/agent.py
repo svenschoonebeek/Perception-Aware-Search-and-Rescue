@@ -107,7 +107,7 @@ class Agent:
         ys, xs = np.nonzero(visible)
         conf = self.perception.confidence.matrix[visible]
 
-        return Scan(self.name, self.x, self.y, xs, ys, trvs, vuln, vict, agnt, fire, conf)
+        return Scan(self.name, False, self.x, self.y, xs, ys, trvs, vuln, vict, agnt, fire, conf)
     
     def _target_cell(self, action: AgentAction) -> tuple[int, int]:
         """
@@ -142,7 +142,7 @@ class Agent:
         """
         return AgentAction.MOVE_RIGHT
     
-    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
+    def check_status(self, supervisor: Supervisor | None, state: State, victims: list[Victim]) -> None:
         """
         Checks whether the agent has completed its current task, base Agent doesn't use it
         """

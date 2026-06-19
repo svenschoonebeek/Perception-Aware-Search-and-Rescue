@@ -29,7 +29,8 @@ class Simulator:
         self.supervisor: Supervisor | None = None
         self.tripping = True
         self.stopping_condition: StoppingCondition = stopping_condition
-        self.static_victims = True # whether victims are static or move around
+        self.static_victims = False # whether victims are static or move around
+        self.victims_always_follow = True
         self.rng = np.random.default_rng()
 
     def set_supervisor(self, supervisor: Supervisor) -> None:
@@ -87,7 +88,7 @@ class Simulator:
         agent_scans: list[Scan] = []
         for agent in self.agents:
             agent_scans.append(agent.scan(self.ground_truth))
-            agent.check_status(self.supervisor, self.ground_truth)
+            agent.check_status(self.supervisor, self.ground_truth, self.victims)
             if (task := agent.get_current_task()) is not None:
                 logger.debug(f"Agent {agent.name} has task {task.type} with target {task.x}, {task.y} at position ({agent.x}, {agent.y})")
                 logger.debug(f"has path: {agent.get_current_path()}")
@@ -108,10 +109,6 @@ class Simulator:
 
         for victim in self.victims:
             victim.scan(self.ground_truth)
-
-        # Perform environment actions (firespread, etc.)
-        if self.fire_manager is not None:
-            self.fire_manager.spread_fire(self.ground_truth)
         
         self.metrics.steps_taken += 1
         self._update_victim_metrics()
@@ -557,7 +554,8 @@ class Simulator:
         for i, (vy, vx) in enumerate(zip(ys, xs)):
             personality = personalities[np.random.randint(len(personalities))]
             age_group = age_groups[np.random.randint(len(age_groups))]
-            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, seed=seed)
+            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, 
+                       always_follow=self.victims_always_follow, seed=seed)
             v.scan(self.ground_truth)
             self.victims.append(v)
 
@@ -651,7 +649,7 @@ def _generate_traversability_matrix(
                 return (min(start, end), max(start, end) + 1)
             
             direction = np.random.randint(0, 2)
-            if (direction == 1): # horizontal first, then vertical # TODO probably should also return the tunnels same as with rooms
+            if (direction == 1): # horizontal first, then vertical
                 hx_bounds = get_bounds(a_x, b_x)
                 hy_bounds = (max(0, a_y - half_tunnel_width), min(y, a_y + half_tunnel_width + 1))
                 matrix[hy_bounds[0]:hy_bounds[1], hx_bounds[0]:hx_bounds[1]] = TraversabilityLevel.TRAVERSABLE

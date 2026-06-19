@@ -325,6 +325,8 @@ def extract_useful_run_metrics(metric_history: list[MetricInTime]) -> dict:
         "mode": None,
         "avg_step_duration": None,
         "found_victims": final_m.victims_found,
+        "saved_victims": final_m.victims_saved,
+        "dead_victims": final_m.victims_dead,
         "individual_detection_times": final_m.individual_detection_times,
         "total_terrain_collisions": sum(final_m.terrain_collisions.get(agent, 0) for agent in final_m.terrain_collisions.keys()),
         "total_victim_collisions": sum(final_m.victim_collisions.get(agent, 0) for agent in final_m.victim_collisions.keys()),

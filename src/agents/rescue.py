@@ -39,7 +39,8 @@ class RescueAgent(TaskMpcAgent):
 
     def __init__(self, name: str, x: int, y: int, width: int, height: int,
                  decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool,
-                 assigned_victim: Victim | None, capabilities: Capabilities):
+                 assigned_victim: Victim | None, capabilities: Capabilities,
+                 is_greedy: bool = False):
         super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff, capabilities)
         self._assigned_victim: Victim | None = assigned_victim
         self._estimated_trust: float = 0.0
@@ -48,6 +49,7 @@ class RescueAgent(TaskMpcAgent):
         self._leash_wait_ticks: int = 0
         self._no_progress_ticks: int = 0
         self._last_rescue_pos: tuple[int, int] | None = None
+        self.is_greedy: bool = is_greedy  # If True, will self-assign rescue tasks when it sees a victim
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -65,54 +67,83 @@ class RescueAgent(TaskMpcAgent):
         Sets assigned victim, to be used in rescue agent
         """
         self._assigned_victim = victim
+    
+    def _check_victim_close(self, state: State, victims: list[Victim]) -> None:
+        if self.current_task.type == TaskType.RESCUE:
+            return
 
-    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
+        visible = self._tiles_in_radius() & self._tiles_in_los(state)
+        
+        victim_mask = visible & (self.perception.victims.matrix == VictimPresence.PRESENT.value)
+        victim_ys, victim_xs = np.nonzero(victim_mask)
+
+        if len(victim_ys) > 0:
+            distances = np.sqrt((victim_xs - self.x)**2 + (victim_ys - self.y)**2)
+            closest_idx = np.argmin(distances)
+            vy, vx = victim_ys[closest_idx], victim_xs[closest_idx]
+            target_victim = next((v for v in victims if v.x == vx and v.y == vy), None)
+            
+            if target_victim:
+                self.set_assigned_victim(target_victim)
+                new_task = Task(TaskType.RESCUE, x=vx, y=vy, victim_id=target_victim.name, search_status=SearchStatus.SEARCHING)
+                self.set_current_task(new_task)
+                self.current_path = self._calculate_path(self.x, self.y, vx, vy)
+                logger.debug(f"{self.name} locally spotted and greedily self-assigned rescue for {target_victim.name} at ({vx}, {vy})")
+
+    def check_status(self, supervisor: Supervisor | None, state: State, victims: list[Victim]) -> None:
         logger.debug(f"rescue agent checking status with victim {self._assigned_victim.name if self._assigned_victim else None} at ({self._assigned_victim.x}, {self._assigned_victim.y})" if self._assigned_victim else "rescue agent checking status with no assigned victim")
         self.conflict_timeout += 1
         if (self.conflict_timeout >= 3):
             self._check_for_spatial_conflict(supervisor, state)
         
-        if supervisor is None:
-            return
-        
+        if self.is_greedy:
+            self._check_victim_close(state, victims)
+
         if self.current_task.type == TaskType.EXPLORE:
             path_valid = self._check_path_blocked(supervisor)
             if not path_valid:
                 return
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
             if distance_to_target <= 1.0:
-                supervisor.trigger_event(InterventionEvent(
-                    type=EventType.TASK_COMPLETED,
-                    description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
-                    data={"agent": self.name}
-                ))
+                if supervisor is not None:
+                    supervisor.trigger_event(InterventionEvent(
+                        type=EventType.TASK_COMPLETED,
+                        description=f"{self.name} completed exploration task at ({self.current_task.x}, {self.current_task.y})",
+                        data={"agent": self.name}
+                    ))
                 self._return_to_idle()
         elif self.current_task.type == TaskType.RESCUE:
             distance_to_target = np.linalg.norm(np.array([self.current_task.y, self.current_task.x]) - np.array([self.y, self.x]))
             if self.current_task.search_status == SearchStatus.SEARCHING:
-                if distance_to_target <= 3.0:
+                path_to_victim = self._calculate_path(self.x, self.y, self.current_task.x, self.current_task.y)
+                
+                is_close_enough = (self.x == self.current_task.x and self.y == self.current_task.y) or \
+                                  (0 < len(path_to_victim) <= 3)
+                if is_close_enough:
+                # if distance_to_target <= 3.0:
                     self.current_task.search_status = SearchStatus.RESCUING
                     self._leash_wait_ticks = 0
                     self._no_progress_ticks = 0
                     self._last_rescue_pos = None
                     logger.debug(f"{self.name} is starting rescue for victim {self.current_task.victim_id} at ({self.current_task.x}, {self.current_task.y})")
-                    supervisor.trigger_event(InterventionEvent(
-                        type=EventType.INITIALIZING_RESCUE,
-                        description=f"{self.name} found a victim at ({self.current_task.x}, {self.current_task.y}) and is initializing rescue.",
-                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
-                    ))
+                    if supervisor is not None:
+                        supervisor.trigger_event(InterventionEvent(
+                            type=EventType.INITIALIZING_RESCUE,
+                            description=f"{self.name} found a victim at ({self.current_task.x}, {self.current_task.y}) and is initializing rescue.",
+                            data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                        ))
                     self.current_task.x, self.current_task.y = 0, 0 # go to exit, currently hardcoded 0,0
                     self.current_path = self._calculate_path(self.x, self.y, self.current_task.x, self.current_task.y)
-                    # TODO use maria's implementation and her "completed rescue" indication
                 
             elif self.current_task.search_status == SearchStatus.RESCUING:
                 if self._assigned_victim is not None and self._assigned_victim.x < EXIT_ZONE and self._assigned_victim.y < EXIT_ZONE:
                     logger.debug(f"{self.name} is completing rescue for victim {self.current_task.victim_id} at ({self.current_task.x}, {self.current_task.y})")
-                    supervisor.trigger_event(InterventionEvent(
-                        type=EventType.VICTIM_RESCUED,
-                        description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
-                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
-                    ))
+                    if supervisor is not None:
+                        supervisor.trigger_event(InterventionEvent(
+                            type=EventType.VICTIM_RESCUED,
+                            description=f"{self.name} completed rescue task at ({self.current_task.x}, {self.current_task.y})",
+                            data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                        ))
                     self._return_to_idle()
                     return
 
@@ -134,11 +165,12 @@ class RescueAgent(TaskMpcAgent):
                     self._leash_wait_ticks = 0
                     self._no_progress_ticks = 0
                     self._last_rescue_pos = None
-                    supervisor.trigger_event(InterventionEvent(
-                        type=EventType.RESCUE_ABANDONED,
-                        description=f"{self.name} abandoned rescue of {self.current_task.victim_id} due to {reason}",
-                        data={"agent": self.name, "victim_id": self.current_task.victim_id}
-                    ))
+                    if supervisor is not None:
+                        supervisor.trigger_event(InterventionEvent(
+                            type=EventType.RESCUE_ABANDONED,
+                            description=f"{self.name} abandoned rescue of {self.current_task.victim_id} due to {reason}",
+                            data={"agent": self.name, "victim_id": self.current_task.victim_id}
+                        ))
                     self._return_to_idle()
 
     def get_action(self) -> AgentAction:
@@ -146,6 +178,11 @@ class RescueAgent(TaskMpcAgent):
             return self.get_rescue_action()
         else:
             return super().get_action()
+    
+    def scan(self, state: State) -> Scan:
+        res = super().scan(state)
+        res.rescue_agent = True
+        return res
     
     # ------------------------------------------------------------------
     # BDI entry point

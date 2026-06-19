@@ -11,6 +11,8 @@ from .constants import MapConfig, StoppingCondition, Capabilities
 from .simulator import Simulator
 from .supervisor import Supervisor
 from .agents.task_mpc import TaskMpcAgent
+from .agents.rescue import RescueAgent
+from .agents.task_sdd_tmpc import TaskSddTmpcAgent
 from .util import extract_useful_run_metrics, plot_boxes, setup_logging, warmup_numba_compilers, plot_total_spatial_conflicts, plot_victim_detection_times
 from .state import State
 
@@ -30,16 +32,25 @@ def run_single_seed(seed: int, num_steps: int,
     pid = os.getpid()
     logger.info(f"Process {pid} - Starting simulations for seed {seed}...")
 
-    caps = Capabilities(exploration=1.0, rescuing=1.0)
+    rescue_victims = stoppingCondition == StoppingCondition.ALL_VICTIMS_RESCUED
+    rescue_caps = Capabilities(exploration=1.0, rescuing=1.0)
+    no_rescue_caps = Capabilities(exploration=1.0, rescuing=0.0)
 
     sim_sup = Simulator(width, height, stoppingCondition)
     sim_sup.generate_ground_truth(config, seed)
-    sim_sup.add_agent(TaskMpcAgent("tasker1", 0, 0, width, height, 0.01, 0.9, 4, False, caps))
-    sim_sup.add_agent(TaskMpcAgent("tasker2", 0, 1, width, height, 0.01, 0.9, 4, False, caps))
-    sim_sup.add_agent(TaskMpcAgent("tasker3", 0, 2, width, height, 0.01, 0.9, 4, False, caps))
-    sim_sup.add_agent(TaskMpcAgent("tasker4", 1, 0, width, height, 0.01, 0.9, 4, False, caps))
+    if rescue_victims:
+        sim_sup.add_agent(RescueAgent("rescue1", 0, 0, width, height, 0.01, 0.9, 4, False, None, rescue_caps, False))
+        sim_sup.add_agent(TaskMpcAgent("tasker1", 0, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_sup.add_agent(TaskMpcAgent("tasker2", 1, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_sup.add_agent(TaskSddTmpcAgent("tasker3", 1, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+    else: 
+        sim_sup.add_agent(TaskMpcAgent("tasker1", 0, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_sup.add_agent(TaskMpcAgent("tasker2", 0, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_sup.add_agent(TaskMpcAgent("tasker3", 0, 2, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_sup.add_agent(TaskMpcAgent("tasker4", 1, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
     
-    supervisor = Supervisor(width, height, 0.01, 8, False)
+    supervisor = Supervisor(width, height, 0.01, 8, rescue_victims=rescue_victims)
+
     sup_start_time = time()
     sim_sup.set_supervisor(supervisor)
     sim_sup.run(num_steps)
@@ -57,11 +68,17 @@ def run_single_seed(seed: int, num_steps: int,
     if with_unsupervised:
         sim_no_sup = Simulator(width, height, stoppingCondition)
         sim_no_sup.generate_ground_truth(config, seed)
-        sim_no_sup.add_agent(TaskMpcAgent("tasker1", 0, 0, width, height, 0.01, 0.9, 4, False, caps))
-        sim_no_sup.add_agent(TaskMpcAgent("tasker2", 0, 1, width, height, 0.01, 0.9, 4, False, caps))
-        sim_no_sup.add_agent(TaskMpcAgent("tasker3", 0, 2, width, height, 0.01, 0.9, 4, False, caps))
-        sim_no_sup.add_agent(TaskMpcAgent("tasker4", 1, 0, width, height, 0.01, 0.9, 4, False, caps))
-
+        if rescue_victims:
+            sim_no_sup.add_agent(RescueAgent("rescue1", 0, 0, width, height, 0.01, 0.9, 4, False, None, rescue_caps, True))
+            sim_no_sup.add_agent(TaskMpcAgent("tasker1", 0, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+            sim_no_sup.add_agent(TaskMpcAgent("tasker2", 1, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+            sim_no_sup.add_agent(TaskSddTmpcAgent("tasker3", 1, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        else:   
+            sim_no_sup.add_agent(TaskMpcAgent("tasker1", 0, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+            sim_no_sup.add_agent(TaskMpcAgent("tasker2", 0, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+            sim_no_sup.add_agent(TaskMpcAgent("tasker3", 0, 2, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+            sim_no_sup.add_agent(TaskMpcAgent("tasker4", 1, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        
         no_sup_start_time = time()
         sim_no_sup.run(num_steps)
         no_sup_duration = time() - no_sup_start_time
@@ -78,13 +95,21 @@ def run_single_seed(seed: int, num_steps: int,
     
     sim_no_sup_shared_map = Simulator(width, height, stoppingCondition)
     sim_no_sup_shared_map.generate_ground_truth(config, seed)
-    sim_no_sup_shared_map.add_agent(tasker1 := TaskMpcAgent("tasker1", 0, 0, width, height, 0.01, 0.9, 4, False, caps))
-    sim_no_sup_shared_map.add_agent(tasker2 := TaskMpcAgent("tasker2", 0, 1, width, height, 0.01, 0.9, 4, False, caps))
-    sim_no_sup_shared_map.add_agent(tasker3 := TaskMpcAgent("tasker3", 0, 2, width, height, 0.01, 0.9, 4, False, caps))
-    sim_no_sup_shared_map.add_agent(tasker4 := TaskMpcAgent("tasker4", 1, 0, width, height, 0.01, 0.9, 4, False, caps))
+
+    if rescue_victims:
+        sim_no_sup_shared_map.add_agent(RescueAgent("rescue1", 0, 0, width, height, 0.01, 0.9, 4, False, None, rescue_caps, True))
+        sim_no_sup_shared_map.add_agent(TaskMpcAgent("tasker1", 0, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_no_sup_shared_map.add_agent(TaskMpcAgent("tasker2", 1, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_no_sup_shared_map.add_agent(TaskSddTmpcAgent("tasker3", 1, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+    else:   
+        sim_no_sup_shared_map.add_agent(TaskMpcAgent("tasker1", 0, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_no_sup_shared_map.add_agent(TaskMpcAgent("tasker2", 0, 1, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_no_sup_shared_map.add_agent(TaskMpcAgent("tasker3", 0, 2, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+        sim_no_sup_shared_map.add_agent(TaskMpcAgent("tasker4", 1, 0, width, height, 0.01, 0.9, 4, False, no_rescue_caps))
+
     # Share the perception map among all agents
     shared_perception = State(width, height)
-    for agent in [tasker1, tasker2, tasker3, tasker4]:
+    for agent in sim_no_sup_shared_map.agents:
         agent.perception = shared_perception
     
     no_sup_shared_map_start_time = time()
@@ -121,7 +146,7 @@ def gather_data(width: int, height: int,
     max_cores = os.cpu_count()
     if max_cores is None:
         return
-    cores_used = max_cores# - 2
+    cores_used = max_cores #- 2
     logger.info(f"Starting data gathering for {num_runs} seeds for starting seed {seed_start} on max {cores_used} cores...")
 
     all_rows = []
@@ -135,9 +160,12 @@ def gather_data(width: int, height: int,
 
         for idx, future in enumerate(concurrent.futures.as_completed(futures)):
             sup_metrics, no_sup_metrics, no_sup_shared_map_metrics = future.result()
-            all_rows.append(sup_metrics)
-            all_rows.append(no_sup_metrics)
-            all_rows.append(no_sup_shared_map_metrics)
+            if sup_metrics:
+                all_rows.append(sup_metrics)
+            if no_sup_metrics:
+                all_rows.append(no_sup_metrics)
+            if no_sup_shared_map_metrics:
+                all_rows.append(no_sup_shared_map_metrics)
 
             logger.info(f"Progress: {idx + 1}/{num_runs} seeds completed")
         executor.shutdown(wait=True)
@@ -152,7 +180,8 @@ def gather_data(width: int, height: int,
     df = pd.DataFrame(all_rows)
     cols = ['seed', 'mode', 'num_agents', 'total_steps', 'final_exploration', 
             'time_to_50', 'time_to_70', 'time_to_80', 'time_to_85', 'time_to_90', 'time_to_all_found',
-            'avg_inter_agent_distance', 'avg_step_duration', 'total_spatial_conflicts', 'found_victims', 'individual_detection_times',
+            'avg_inter_agent_distance', 'avg_step_duration', 'total_spatial_conflicts', 'found_victims', 'saved_victims', 'dead_victims',
+            'individual_detection_times',
             'total_terrain_collisions', 'total_victim_collisions', 'total_fire_collisions', 'total_inter_agent_collisions', 'total_task_allocations',
             'exploration_redundancy',
             'total_event_resolve_time', 'total_event_resolves', 'total_wait_actions', 'total_damage',
@@ -160,7 +189,7 @@ def gather_data(width: int, height: int,
             ]
     df = df[cols]
     
-    csv_filename = f"event_resolve_{date.today()}_{strftime('%H-%M-%S')}_{num_runs}x_{width}x{height}_{config.initial_fire_points}x_fire_sim_res.csv"
+    csv_filename = f"1_each_{date.today()}_{strftime('%H-%M-%S')}_{num_runs}x_{width}x{height}_{config.initial_fire_points}x_fire_sim_res.csv"
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
     logger.info(f"Saving data to {csv_path}.")
@@ -168,7 +197,7 @@ def gather_data(width: int, height: int,
 
     logger.info(f"Data gathering completed in {time() - start_time:.2f} seconds.")
     logger.info(f"Data successfully saved to {csv_path}")
-    # evaluate_csv_data(csv_path)
+    evaluate_csv_data(csv_path)
 
 def evaluate_csv_data(csv_filename: str):
     df = pd.read_csv(csv_filename)
@@ -187,7 +216,7 @@ def evaluate_csv_data(csv_filename: str):
     summary['std_avg_step_duration'] = df.groupby('mode')['avg_step_duration'].std()
     summary['std_avg_inter_agent_distance'] = df.groupby('mode')['avg_inter_agent_distance'].std()
     
-    summary['avg_event_resolve_time'] = df.groupby('mode')['total_event_resolve_time'].mean() / df.groupby('mode')['total_event_resolves'].mean()
+    # summary['avg_event_resolve_time'] = df.groupby('mode')['total_event_resolve_time'].mean() / df.groupby('mode')['total_event_resolves'].mean()
 
     if 'Supervised' in summary.index and 'Unsupervised' in summary.index:
         summary.loc['Ratio (Sup/Unsup)'] = summary.loc['Supervised'] / summary.loc['Unsupervised']
@@ -195,7 +224,7 @@ def evaluate_csv_data(csv_filename: str):
         summary.loc['Ratio (Sup/Unsup_Shared)'] = summary.loc['Supervised'] / summary.loc['Shared']
 
     milestone_cols = [c for c in ['time_to_50', 'time_to_70', 'time_to_80', 'time_to_85', 'time_to_90'] if c in summary.columns]
-    spatial_cols = [c for c in ['total_steps', 'final_exploration', 'avg_inter_agent_distance', 'total_spatial_conflicts', 'found_victims', 'exploration_velocity'] if c in summary.columns]
+    spatial_cols = [c for c in ['total_steps', 'final_exploration', 'avg_inter_agent_distance', 'total_spatial_conflicts', 'found_victims', 'saved_victims', 'dead_victims', 'exploration_velocity'] if c in summary.columns]
     perf_cols = [c for c in ['time_to_all_found', 'avg_step_duration', 'total_task_allocations', 'total_event_resolve_time', 'total_event_resolves','avg_event_resolve_time', 'exploration_redundancy'] if c in summary.columns]
     collision_cols = [c for c in ['total_terrain_collisions', 'total_victim_collisions', 'total_fire_collisions', 'total_inter_agent_collisions', 'total_infeasible_states','total_damage'] if c in summary.columns]
     safety_cols = [c for c in ['total_time_in_vulnerable', 'total_time_in_high_risk', 'fraction_time_in_vulnerable', 'fraction_time_in_high_risk', 'total_wait_actions'] if c in summary.columns]
@@ -226,7 +255,7 @@ def evaluate_csv_data(csv_filename: str):
                            'time_to_50', 'time_to_90',
                            'total_inter_agent_collisions', 'total_fire_collisions',
                            'total_terrain_collisions', 'total_infeasible_states',
-                           'total_damage', 'fraction_time_in_vulnerable',
+                           'total_damage', 'saved_victims', 'dead_victims', 'fraction_time_in_vulnerable',
                            'fraction_time_in_high_risk' ]
         
         comparisons = [('Supervised', 'Unsupervised'), ('Supervised', 'Shared')]
@@ -393,27 +422,23 @@ if __name__ == '__main__':
     
     # config = MapConfig(num_rooms=12, num_victims=20, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
     #                    , initial_fire_points=1, room_vulnerability_probability=0.1, tunnel_vulnerability_probability=0.1, fire_spread_rate=0.01, fire_duration=100)
-    config = MapConfig(num_rooms=12, num_victims=20, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
-                       , initial_fire_points=1, room_vulnerability_probability=0.3, tunnel_vulnerability_probability=0.4, room_vulnerability_severity=0.2, tunnel_vulnerability_severity=0.2,fire_spread_rate=0.01, fire_duration=100)
+    # config = MapConfig(num_rooms=12, num_victims=20, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
+    #                    , initial_fire_points=1, room_vulnerability_probability=0.3, tunnel_vulnerability_probability=0.4, room_vulnerability_severity=0.2, tunnel_vulnerability_severity=0.2,fire_spread_rate=0.01, fire_duration=100)
     
-    starting_seed = 276895418
     # gather_data(width=60, height=60, stoppingCondition=StoppingCondition.ALL_VICTIMS_FOUND, num_runs=108, steps_per_run=300, 
-    #             config=config, with_unsupervised=False, with_shared_map=False, seed_start=starting_seed)
+                # config=config, with_unsupervised=False, with_shared_map=False, seed_start=starting_seed)
+    
+    # rescue_config = MapConfig(num_rooms=10, num_victims=10, room_vulnerability_probability=0.4, room_vulnerability_severity=0.2, tunnel_vulnerability_probability=0.1, min_room_length=5, min_room_width=5, max_room_length=10, 
+    #                            max_room_width=10, min_tunnel_thickness=2, max_tunnel_thickness=3, fire_spread_rate=0.01, fire_duration=100, initial_fire_points=1)
+
+    heterogeneity_config = MapConfig(num_rooms=15, num_victims=10, min_room_length=4, min_room_width=4, max_room_length=8, max_room_width=8, max_tunnel_thickness=3, min_tunnel_thickness=2
+                    , initial_fire_points=1, room_vulnerability_probability=0.3, tunnel_vulnerability_probability=0.4, room_vulnerability_severity=0.2, tunnel_vulnerability_severity=0.2,fire_spread_rate=0.01, fire_duration=100)
+
+    # gather_data(width=50, height=50, stoppingCondition=StoppingCondition.ALL_VICTIMS_RESCUED, num_runs=18, steps_per_run=300,
+    #             config=heterogeneity_config, with_unsupervised=True, with_shared_map=False, seed_start=800218691)
     
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    csv_filename = "event_resolve_2026-06-17_15-40-49_108x_60x60_1x_fire_sim_res.csv"
+    csv_filename = "1_each_2026-06-19_12-04-05_18x_50x50_1x_fire_sim_res.csv"
     csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
     evaluate_csv_data(csv_path)
-
-    # csv_filename = "large_60x60_216x_3x_fire.csv"
-    # csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
-    # evaluate_csv_data(csv_path)
-
-    # csv_filename = "large_60x60_216x_5x_fire.csv"
-    # csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
-    # evaluate_csv_data(csv_path)
-
-    # csv_filename = "large_60x60_216x_10x_fire.csv"
-    # csv_path = os.path.join(parent_dir, 'sim_data', csv_filename)
-    # evaluate_csv_data(csv_path)
     # plot_boxes(csv_path)

@@ -1,4 +1,4 @@
-from typing import Self
+from typing import TYPE_CHECKING, Self
 import numpy as np
 import logging
 
@@ -7,6 +7,7 @@ from src.state import State
 from src.constants import *
 from src.supervisor import Supervisor
 from src.util import fast_bfs_array
+from .victim import Victim
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class TaskMpcAgent(MpcAgent):
         """
         return self.spatial_conflicts
     
-    def check_status(self, supervisor: Supervisor | None, state: State) -> None:
+    def check_status(self, supervisor: Supervisor | None, state: State, victims: list[Victim]) -> None:
         """
         Checks whether the status of the agent, like if a target has been met, and triggers the corresponding event for the supervisor.
 

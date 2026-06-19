@@ -46,6 +46,7 @@ class Victim(Agent):
                  personality: Personality = Personality.EGOIST,
                  age_group: AgeGroup = AgeGroup.ADULT,
                  is_static: bool = False,
+                 always_follow: bool = False,
                  seed: int | None = None):
         super().__init__(
             name=name, x=x, y=y, width=width, height=height,
@@ -56,6 +57,7 @@ class Victim(Agent):
         )
         self.personality = personality
         self.age_group = age_group
+        self.always_follow = always_follow
         self._base_move_prob: float = _BASE_MOVE_PROB[age_group.value] if not is_static else 0.0
         self.rng = np.random.default_rng(seed)
         self.trust: float = _TRUST_INIT
@@ -94,6 +96,11 @@ class Victim(Agent):
         self._update_trust()
         in_danger = self._perceives_danger()
 
+        if self.always_follow:
+            action = self._step_towards(*self._curr_robot_pos) if self._curr_robot_pos is not None else AgentAction.WAIT
+            if action is not None:
+                return action
+        
         # Personal space: always retreat if a robot is cardinally adjacent, regardless of trust
         adjacent_robot = self._nearest_adjacent_robot()
         if adjacent_robot is not None:
@@ -185,6 +192,10 @@ class Victim(Agent):
         curr_dist = robot_info[0] if robot_info is not None else None
         self._curr_robot_pos = robot_info[1] if robot_info is not None else None
 
+        if self.always_follow:
+            self.trust = 1.0
+            return
+        
         if self._prev_danger is None:
             self._prev_danger = curr_danger
             self._prev_robot_dist = curr_dist
