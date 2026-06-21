@@ -49,6 +49,7 @@ class Visualizer:
     def __init__(self, history, max_grid_w=800, max_grid_h=800):
         pygame.init()
         pygame.display.set_caption("Search and Rescue Simulation Visualizer")
+        pygame.display.set_icon(pygame.image.load("assets/robot.png"))
 
         #self.history = history
         self.all_histories = history
@@ -411,6 +412,10 @@ class Visualizer:
                 if self.is_dragging_slider and event.type == pygame.MOUSEMOTION:
                     rel_x = max(0, min(event.pos[0] - self.slider_rect.x, self.slider_rect.width))
                     self.current_step = int((rel_x / self.slider_rect.width) * (len(self.ground_truth) - 1))
+
+                # Spacebar PAUSE/PLAY
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                    self.is_playing = not self.is_playing
             
             if self.is_playing:
                now = pygame.time.get_ticks()

@@ -18,7 +18,8 @@ class MpcAgent(Agent):
         # The number of deep-copies of the agent made when calculating the action to take will be 5^horizon
         self.horizon = 4
         self.discount = 0.9 # Discount factor, nearer moves are more important than later moves
-        self.fire_spread_rate = 0.3
+        self.fire_spread_rate = 1.0
+        self.tube_size = 0
 
         self.frontier_distances: NDArray = np.full((self.world_height, self.world_width), -1, dtype=np.int16)
         self.fire_prediction: NDArray = np.zeros((self.world_height, self.world_width), dtype=FireLevel)
@@ -56,6 +57,7 @@ class MpcAgent(Agent):
                 next_state = model_state._predict_next_state(action, depth)
                 if next_state is None or not next_state._is_feasible():
                     continue
+                next_state.scan(next_state.perception)
 
                 next_objective = objective + ((self.discount ** depth) * next_state._objective_stage())
                 
@@ -104,7 +106,6 @@ class MpcAgent(Agent):
         new_agent.y, new_agent.x = target
 
         new_agent.perception.fire.matrix = self.fire_prediction[depth]        
-        new_agent.scan(new_agent.perception)
 
         return new_agent
 
@@ -132,6 +133,10 @@ class MpcAgent(Agent):
             traversable_mask = self.perception.traversability == TraversabilityLevel.TRAVERSABLE
             exposed_mask = adjacent_mask & safe_mask & traversable_mask
             current_fire[exposed_mask] = FireLevel.FLAMMABLE
+
+            burning_mask = current_fire == FireLevel.BURNING
+            burnout_mask = burning_mask & (self.fire_durations >= self.fire_duration)
+            current_fire[burnout_mask] = FireLevel.BURNT
 
             predictions[i] = current_fire
 
@@ -163,7 +168,7 @@ class MpcAgent(Agent):
         Returns:
         The objective value
         """
-        w_discovery, w_safety, w_confidence = 100, 10, 3 # To be adjusted
+        w_discovery, w_safety, w_confidence = 100, 0, 3 # To be adjusted
 
         discovery   =  w_discovery * self._discovery_score()
         safety      = -w_safety * self._safety_penalty()

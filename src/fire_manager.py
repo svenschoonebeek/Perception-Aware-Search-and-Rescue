@@ -76,7 +76,7 @@ class FireManager:
                 if (ground_truth.fire[new_y][new_x] == FireLevel.FLAMMABLE):
                     if (self.rng.random() <= self.spread_rate):
                         ground_truth.fire[new_y][new_x] = FireLevel.BURNING
-                        newly_ignited.add((new_x, new_y, 0))
+                        newly_ignited.add((new_x, new_y, 1))
             if (duration < self.fire_duration or self.fire_duration == -1):
                 continuing_fires.add((x, y, duration + 1))
             else:

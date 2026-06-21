@@ -69,8 +69,8 @@ class Simulator:
         logger.debug("Intents: %s", {agent.name: (int(intent[0]), int(intent[1])) for agent, intent in intents.items()})
         self._resolve_agent_conflicts(intents)
         self._commit_moves(intents)
-        self._step_victims()
-        self._rescue_victims_at_exit()
+        # self._step_victims()
+        # self._rescue_victims_at_exit()
 
         if self.tripping:
             self._perform_trips()
@@ -98,12 +98,8 @@ class Simulator:
             if self.supervisor.requires_intervention():
                 self.supervisor.resolve_events(self.agents, self.victims) # victims are passed to be passed to rescue agent
 
-        for victim in self.victims:
-            victim.scan(self.ground_truth)
-
-        # Perform environment actions (firespread, etc.)
-        if self.fire_manager is not None:
-            self.fire_manager.spread_fire(self.ground_truth)
+        # for victim in self.victims:
+        #     victim.scan(self.ground_truth)
         
         self.metrics.steps_taken += 1
         self._update_victim_metrics()
@@ -146,7 +142,7 @@ class Simulator:
             record.append([self.supervisor.shared_belief.copy()])        
         for _ in range(steps):
             # Record steps
-            logger.debug("Step %d =========================", _)
+            # logger.info("Step %d =========================", _)
             step_result = self.step()
             for i in range(len(step_result)):
                 record[i].append(step_result[i])
@@ -459,7 +455,7 @@ class Simulator:
             if is_wall:
                 self.metrics.record_terrain_collision(agent)
                 continue
-
+            
             if self.ground_truth.agents[intended_y][intended_x] == 1:
                 self.metrics.record_inter_agent_collision(agent)
                 continue
@@ -493,7 +489,6 @@ class Simulator:
         def log_seed():
             logger.info(f"Using seed {seed} to generate the map.")
         log_seed()
-        atexit.register(log_seed)
         
         # generates and sets the 2D grid with agent and victims, currently with preset values.
         self.ground_truth.traversability.matrix, rooms, tunnels = _generate_traversability_matrix(self.width, self.height, 
@@ -506,16 +501,16 @@ class Simulator:
                                                                                 config.room_vulnerability_probability, config.tunnel_vulnerability_probability,
                                                                                 config.room_vulnerability_severity, config.tunnel_vulnerability_severity)
         self.ground_truth.victims.matrix = _place_victims(self.width, self.height, config.num_victims, rooms, self.ground_truth.agents)
-        self.victims = []
-        personalities = list(Personality)
-        age_groups = list(AgeGroup)
-        ys, xs = np.nonzero(self.ground_truth.victims.matrix == VictimPresence.PRESENT)
-        for i, (vy, vx) in enumerate(zip(ys, xs)):
-            personality = personalities[np.random.randint(len(personalities))]
-            age_group = age_groups[np.random.randint(len(age_groups))]
-            v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, seed=seed)
-            v.scan(self.ground_truth)
-            self.victims.append(v)
+        # self.victims = []
+        # personalities = list(Personality)
+        # age_groups = list(AgeGroup)
+        # ys, xs = np.nonzero(self.ground_truth.victims.matrix == VictimPresence.PRESENT)
+        # for i, (vy, vx) in enumerate(zip(ys, xs)):
+        #     personality = personalities[np.random.randint(len(personalities))]
+        #     age_group = age_groups[np.random.randint(len(age_groups))]
+        #     v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, seed=seed)
+        #     v.scan(self.ground_truth)
+        #     self.victims.append(v)
 
         self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration, seed))
         if self.fire_manager is not None:

@@ -1,93 +1,78 @@
 # RP 2026 - Autonomous Search and Rescue
 
-
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.ewi.tudelft.nl/nlaplagne/rp-2026-autonomous-search-and-rescue.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-* [Set up project integrations](https://gitlab.ewi.tudelft.nl/nlaplagne/rp-2026-autonomous-search-and-rescue/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
 ## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+This repository is a fork of a collaborative repository for group 20 of the TUDelft 2026 [CSE3000 Research Project](https://cse3000-research-project.github.io/2026/Q4). The project is titled: "Risk‑bounded, human‑aware autonomy: Safe reinforcement learning and predictive control in a post-disaster search and rescue testbed". All of team 20 contributed to the development of this project. This fork was aimed to develop a state-dependent dynamic tube model predictive control (SDD-TMPC) controller, which maps its perception of its local environment to a tube size. This controller was tested in a simulated search and rescue (SaR) environment, with walls/untraversable terrain, victims, and dynamic fires. Uniformly sampled noise is also included for further investigation into how the controller retains its behavior under increasing perceptual noise.
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+The main method to perform a simulated search and rescue is the `Simulator` class. A simulation should be initialized with a simulation width and height, and the simulated world should be generated:
+```py
+sim = Simulator(35, 35)
+sim.generate_ground_truth()
+```
+Optionally, simulation conditions can be customized with the `MapConfig` class, and the generation can be seeded, e.g:
+```py
+sim.generate_ground_truth(MapConfig(), seed)
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+An agent can then be created and inserted into the simulation:
+```py
+name = "mpc"
+start_x, start_y = 1, 1
+world_width, world_height = 35, 35
+confidence_decay = 0.05
+scan_accuracy, scan_radius = 0.35, 4
+scan_falloff = True
+agent: Agent = MpcAgent(
+    name, 
+    start_x, start_y, 
+    world_width, world_height, 
+    confidence_decay, 
+    scan_accuracy, scan_radius, 
+    scan_falloff
+    )
+sim.add_agent(agent)
+```
+The initializer for agents can be found under `src/agents/*.py`.\
+The simulation can then be performed using the simulator's `run` method, which takes a maximum number of steps the simulation can run for. This method returns a datastructure that stores all intermediate states of the ground truth, and each agent's perception. More info can be found in the method doc at `src/simulator.py`.
+```py
+max_steps = 300
+history = sim.run(max_steps)
+```
+The run can then be visualized using the `Visualizer` class:
+```py
+app_height_px, app_width_px = 1200, 1200
+Visualizer(
+    history, 
+    app_height_px, app_width_px
+    ).run()
+```
+Additionally, simulation metrics are stored in the `metrics` field of the `Simulator` class.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Visualizer Features
+![visualizer example](images/visualizer_example.png)
+#### Controls
+The visualizer has a runtime bar at the bottom which can be scrolled through using the mouse or left/right arrow key.\
+Play/pause can be operated through the on-screen button or the space bar.\
+Properties which are visualized can be toggled on/off on the right-side menu, and a step count can be found just below. The perspective from which to visualize can be selected in the top right menu.\
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+#### Saved runs
+A run can be saved to file by clicking the `SAVE TO FILE` button. The file path will be printed in the terminal. A saved run can be loaded into a visualizer instance using the `from_file` method in the `Visualizer` class:
+```py
+viz = Visualizer.from_file(
+    file_path, 
+    app_height_px, app_width_px
+    )
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## Data
+All data and processing used for the research project can be found under the `saved_runs/data` directory. Data gathering code can be found in `src/main.py`.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Running
+Execution of the project is best done using the python `uv` package/project manager. To ensure the virtual environment has the correct packages loaded, the command
+```shell
+uv sync
+``` 
+should be run, after which the project can be executed with
+```shell
+uv run python -m src.main
+```
