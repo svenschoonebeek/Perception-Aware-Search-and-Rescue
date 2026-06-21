@@ -69,7 +69,7 @@ def run_single(seed: int, delta: float, config: MapConfig, agent_template: Agent
         delta
     ]
 
-    Visualizer(history, 1000, 1000).run()
+    # Visualizer(history, 1000, 1000).run()
 
     return seed, delta, duration, outcome, row
 
@@ -148,52 +148,62 @@ def main():
     tmpc = TmpcAgent("tmpc", 1, 1, WIDTH, HEIGHT, 0.05, 0.35, 4, True)
     sdd = SddTmpcAgent("sdd", 1, 1, WIDTH, HEIGHT, 0.05, 0.35, 4, True)
 
-    # seeds = pd.read_csv('saved_runs/data/sdd_results.csv').seed
-    # deltas = [0.05, 0.10, 0.20]
+    seeds = pd.read_csv('saved_runs/data/sdd_results.csv').seed
+    deltas = [0.1, 0.2, 0.4]
 
-    # seeds = np.random.randint(0, 1_000_000_000, size=num_sims)
-    # deltas = [0.0]
+    mpc_df = gather_results(
+        seeds,
+        [0.0],
+        config,
+        mpc,
+        WIDTH,
+        HEIGHT,
+        max_steps,
+        metrics,
+        n_workers=N_WORKERS
+    )
+    mpc_df.to_csv('saved_runs/data/mpc_results.csv', index=False)
 
-    # mpc_df = gather_results(
-    #     seeds,
-    #     deltas,
-    #     config,
-    #     mpc,
-    #     WIDTH,
-    #     HEIGHT,
-    #     max_steps,
-    #     metrics,
-    #     n_workers=N_WORKERS
-    # )
-    # mpc_df.to_csv('saved_runs/data/mpc_results.csv', index=False)
+    tmpc_df = gather_results(
+        seeds,
+        [0.0],
+        config,
+        tmpc,
+        WIDTH,
+        HEIGHT,
+        max_steps,
+        metrics,
+        n_workers=N_WORKERS
+    )
+    tmpc_df.to_csv('saved_runs/data/tmpc_results.csv', index=False)
 
-    # tmpc_df = gather_results(
-    #     seeds,
-    #     deltas,
-    #     config,
-    #     tmpc,
-    #     WIDTH,
-    #     HEIGHT,
-    #     max_steps,
-    #     metrics,
-    #     n_workers=N_WORKERS
-    # )
-    # tmpc_df.to_csv('saved_runs/data/tmpc_results.csv', index=False)
+    sdd_df = gather_results(
+        seeds,
+        [0.0],
+        config,
+        sdd,
+        WIDTH,
+        HEIGHT,
+        max_steps,
+        metrics,
+        n_workers=N_WORKERS
+    )
+    sdd_df.to_csv('saved_runs/data/sdd_results.csv', index=False)
+    
+    noise_df = gather_results(
+        seeds,
+        deltas,
+        config,
+        sdd,
+        WIDTH,
+        HEIGHT,
+        max_steps,
+        metrics,
+        n_workers=N_WORKERS
+    )
+    noise_df.to_csv('saved_runs/data/noise_results.csv', index=False)
 
-    # sdd_df = gather_results(
-    #     seeds,
-    #     deltas,
-    #     config,
-    #     sdd,
-    #     WIDTH,
-    #     HEIGHT,
-    #     max_steps,
-    #     metrics,
-    #     n_workers=N_WORKERS
-    # )
-    # sdd_df.to_csv('saved_runs/data/sdd_results.csv', index=False)
-
-    run_single(874710640, 0, config, sdd, WIDTH, HEIGHT, max_steps)
+    # run_single(245855993, 0.4, config, sdd, WIDTH, HEIGHT, max_steps)
 
 if __name__ == "__main__":
     main()
