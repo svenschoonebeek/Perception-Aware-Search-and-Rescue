@@ -22,6 +22,7 @@ class Simulator:
         self.height = height
         self.agents: list[Agent] = []
         self.victims: list[Victim] = []
+        self.all_victims: list[Victim] = []
         self.ground_truth = State(width, height)
         self.fire_manager: FireManager | None = None
         self.metrics = Metric()
@@ -555,6 +556,8 @@ class Simulator:
             v = Victim(f"victim_{i}", int(vx), int(vy), self.width, self.height, personality, age_group, is_static=self.static_victims, seed=seed)
             v.scan(self.ground_truth)
             self.victims.append(v)
+
+        self.all_victims: list[Victim] = list(self.victims)
 
         self.set_fire_manager(FireManager(self.width, self.height, config.fire_spread_rate, config.fire_duration, seed))
         if self.fire_manager is not None:

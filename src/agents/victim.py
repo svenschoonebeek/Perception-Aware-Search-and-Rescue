@@ -51,7 +51,7 @@ class Victim(Agent):
             name=name, x=x, y=y, width=width, height=height,
             decay=0.0,
             scan_accuracy=1.0,
-            scan_radius=3,
+            scan_radius=4,
             scan_falloff=False,
         )
         self.personality = personality
@@ -69,6 +69,19 @@ class Victim(Agent):
         self._robot_stuck_ticks: int = 0
         self._last_own_pos: tuple[int, int] | None = None
         self._own_stuck_ticks: int = 0
+        # Trust accumulator fields (for ablation analysis)
+        self._tick: int = 0
+        self._trust_sum: float = 0.0
+        self._trust_ticks: int = 0
+        self._trust_drops: int = 0
+        self._ticks_to_threshold: int | None = None
+        self._follow_ticks: int = 0
+        self._active_ticks: int = 0
+        self._est_err_sum: float = 0.0
+        self._est_err_count: int = 0
+        self._signed_err_sum: float = 0.0
+        self._overtrust_ticks: int = 0
+        self._undertrust_ticks: int = 0
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -85,6 +98,18 @@ class Victim(Agent):
         copy._robot_stuck_ticks = self._robot_stuck_ticks
         copy._last_own_pos = self._last_own_pos
         copy._own_stuck_ticks = self._own_stuck_ticks
+        copy._tick = self._tick
+        copy._trust_sum = self._trust_sum
+        copy._trust_ticks = self._trust_ticks
+        copy._trust_drops = self._trust_drops
+        copy._ticks_to_threshold = self._ticks_to_threshold
+        copy._follow_ticks = self._follow_ticks
+        copy._active_ticks = self._active_ticks
+        copy._est_err_sum = self._est_err_sum
+        copy._est_err_count = self._est_err_count
+        copy._signed_err_sum = self._signed_err_sum
+        copy._overtrust_ticks = self._overtrust_ticks
+        copy._undertrust_ticks = self._undertrust_ticks
         return copy
 
     # ------------------------------------------------------------------
@@ -111,6 +136,7 @@ class Victim(Agent):
         if self.trust >= _TRUST_FOLLOW_THRESHOLD and self._curr_robot_pos is not None:
             action = self._step_towards(*self._curr_robot_pos)
             if action is not None:
+                self._follow_ticks += 1
                 return action
 
         # SELFISH always flees; EGOIST and ALTRUIST wander until danger (or until
@@ -181,6 +207,7 @@ class Victim(Agent):
           danger    — asymmetric: improvement is weighted 3× less than worsening
         No update at all when robot is out of perception range.
         """
+        self._tick += 1
         curr_danger = self._cell_danger_level()
         robot_info = self._nearest_robot()
         curr_dist = robot_info[0] if robot_info is not None else None
@@ -238,7 +265,17 @@ class Victim(Agent):
         elif danger_delta > 0:
             sigma += -danger_delta * _SIGMA_DANGER_LOSS_WEIGHT
 
+        prev_trust = self.trust
         self.trust = max(0.0, min(self.trust + self._trust_sensitivity * sigma, self.trust_max))
+
+        self._trust_ticks += 1
+        self._trust_sum += self.trust
+        self._active_ticks += 1
+        if self.trust < prev_trust:
+            self._trust_drops += 1
+        if self._ticks_to_threshold is None and self.trust >= _TRUST_FOLLOW_THRESHOLD:
+            self._ticks_to_threshold = self._tick
+
         self._prev_danger = curr_danger
         self._prev_robot_dist = curr_dist
 

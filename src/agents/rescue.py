@@ -15,7 +15,7 @@ from src.state import State
 EXIT_X, EXIT_Y  = 0, 0
 EXIT_ZONE       = 3     # victims despawn in the EXIT_ZONE × EXIT_ZONE square at (0,0)
 TRUST_THRESHOLD      = 0.4   # switch from approach-mode to lead-mode above this
-MAX_FOLLOW_DIST      = 5.0   # leash: wait if victim falls this many cells behind
+MAX_FOLLOW_DIST      = 4.0   # leash: wait if victim falls this many cells behind
 SIGMA_ROBOT          = 0.1   # how fast the trust estimate updates per unit of Δdistance
 PERSONAL_SPACE_DIST  = 1.5   # victim retreats when robot within 1 cell; retreats land ≤ this
 LEASH_TIMEOUT        = 10    # ticks of leash-wait before abandoning rescue
@@ -39,7 +39,8 @@ class RescueAgent(TaskMpcAgent):
 
     def __init__(self, name: str, x: int, y: int, width: int, height: int,
                  decay: float, scan_accuracy: float, scan_radius: int, scan_falloff: bool,
-                 assigned_victim: Victim | None, capabilities: Capabilities):
+                 assigned_victim: Victim | None, capabilities: Capabilities,
+                 trust_aware: bool = True):
         super().__init__(name, x, y, width, height, decay, scan_accuracy, scan_radius, scan_falloff, capabilities)
         self._assigned_victim: Victim | None = assigned_victim
         self._estimated_trust: float = 0.0
@@ -48,6 +49,7 @@ class RescueAgent(TaskMpcAgent):
         self._leash_wait_ticks: int = 0
         self._no_progress_ticks: int = 0
         self._last_rescue_pos: tuple[int, int] | None = None
+        self.trust_aware: bool = trust_aware
 
     def copy(self) -> Self:
         copy = super().copy()
@@ -58,6 +60,7 @@ class RescueAgent(TaskMpcAgent):
         copy._leash_wait_ticks = self._leash_wait_ticks
         copy._no_progress_ticks = self._no_progress_ticks
         copy._last_rescue_pos = self._last_rescue_pos
+        copy.trust_aware = self.trust_aware
         return copy
     
     def set_assigned_victim(self, victim: Victim) -> None:
@@ -152,9 +155,22 @@ class RescueAgent(TaskMpcAgent):
     # ------------------------------------------------------------------
     def get_rescue_action(self) -> AgentAction:
         self._rebuild_exit_bfs()
-        estimated_trust = self._estimate_trust()
+        self._estimate_trust()  # always update τ̂ so it's logged in both arms
 
-        if estimated_trust < TRUST_THRESHOLD:
+        if self._assigned_victim is not None:
+            self._assigned_victim._est_err_sum += abs(self._assigned_victim.trust - self._estimated_trust)
+            self._assigned_victim._est_err_count += 1
+            signed = self._estimated_trust - self._assigned_victim.trust  # positive => over-trust
+            self._assigned_victim._signed_err_sum += signed
+            if signed > 0:
+                self._assigned_victim._overtrust_ticks += 1
+            elif signed < 0:
+                self._assigned_victim._undertrust_ticks += 1
+
+        if not self.trust_aware:
+            return self._lead_to_exit()
+
+        if self._estimated_trust < TRUST_THRESHOLD:
             return self._approach()
         else:
             return self._lead_to_exit()

@@ -27,7 +27,7 @@ def main():
     
     sim = Simulator(WIDTH, HEIGHT, StoppingCondition.ALL_VICTIMS_RESCUED)
     config = MapConfig(num_rooms=10, num_victims=10, room_vulnerability_probability=0.4, room_vulnerability_severity=0.2, tunnel_vulnerability_probability=0.1, min_room_length=5, min_room_width=5, max_room_length=10, max_room_width=10, min_tunnel_thickness=2, max_tunnel_thickness=3, fire_spread_rate=0.02, fire_duration=100, initial_fire_points=1)
-    sim.generate_ground_truth(config, 638071547)
+    sim.generate_ground_truth(config, 42)
    
     agent1 = RescueAgent("rescuer1", 0, 0, WIDTH, HEIGHT, 0.01, 0.9, 4, False, None, Capabilities(exploration=1.0, rescuing=1.0))
     sim.add_agent(agent1,)
