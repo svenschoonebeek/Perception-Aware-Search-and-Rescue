@@ -1,0 +1,26 @@
+variables:
+  UV_VERSION: "0.11.10"
+  PYTHON_VERSION: "3.12"
+  BASE_LAYER: trixie-slim
+  UV_CACHE_DIR: .uv-cache
+
+image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+
+cache:
+  key:
+    files:
+      - uv.lock
+  paths:
+    - $UV_CACHE_DIR
+
+stages:
+  - test
+
+test_job:
+  stage: test
+  script:
+    - uv sync --frozen
+    - uv run python -m unittest discover
+
+  after_script:
+    - uv cache prune --ci
